@@ -35,7 +35,7 @@ export type PromptSubmission = {
   text: string;
   imageUrls: string[];
   selectedSkills?: SkillInfo[];
-  command?: "new" | "resume" | "exit" | "goal" | "compact" | "diff" | "copy" | "clear" | "backtrack";
+  command?: "new" | "resume" | "exit" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "save-memory" | "backtrack";
 };
 
 type Props = {
@@ -122,7 +122,7 @@ export function PromptInput({
       ? loadingText && loadingText.trim()
         ? loadingText
         : "esc to interrupt · ctrl+c to cancel input"
-      : "enter send · shift+enter newline · ctrl+v image · / commands · ctrl+d exit";
+      : "enter send · shift+enter newline · ctrl+v image · / commands · # note · ctrl+d exit";
   const cursorPlacement = useMemo(
     () => getPromptCursorPlacement(buffer, screenWidth, promptPrefix, footerText),
     [buffer, footerText, promptPrefix, screenWidth]
@@ -551,6 +551,16 @@ export function PromptInput({
       setBuffer(EMPTY_BUFFER);
       return;
     }
+    if (item.kind === "context") {
+      onSubmit({ text: "", imageUrls: [], command: "context" });
+      setBuffer(EMPTY_BUFFER);
+      return;
+    }
+    if (item.kind === "init") {
+      onSubmit({ text: "", imageUrls: [], command: "init" });
+      setBuffer(EMPTY_BUFFER);
+      return;
+    }
   }
 
   function submitCurrentBuffer(): void {
@@ -562,6 +572,19 @@ export function PromptInput({
     const trimmed = buffer.text.trim();
     if (!trimmed && imageUrls.length === 0 && selectedSkills.length === 0) {
       return;
+    }
+
+    // # prefix shortcut: save note to AGENTS.md without sending to the model (from Claude Code)
+    if (trimmed.startsWith("#") && !trimmed.startsWith("#!")) {
+      const note = trimmed.slice(1).trim();
+      if (note) {
+        onSubmit({ text: note, imageUrls: [], command: "save-memory" });
+        setBuffer(EMPTY_BUFFER);
+        setImageUrls([]);
+        setSelectedSkills([]);
+        setShowSkillsDropdown(false);
+        return;
+      }
     }
 
     if (trimmed.startsWith("/")) {
@@ -665,13 +688,16 @@ export function PromptInput({
       ) : null}
       {showMenu ? (
         <Box flexDirection="column" marginBottom={1}>
-          {slashMenu.map((item, idx) => (
+          {slashMenu.slice(0, 10).map((item, idx) => (
             <Text key={item.label} color={idx === menuIndex ? "cyanBright" : undefined} wrap="truncate-end">
               {idx === menuIndex ? "› " : "  "}
               <Text bold>{formatSlashCommandLabel(item)}</Text>
               <Text dimColor>  {formatSlashCommandDescription(item.description)}</Text>
             </Text>
           ))}
+          {slashMenu.length > 10 ? (
+            <Text dimColor>  … {slashMenu.length - 10} more</Text>
+          ) : null}
         </Box>
       ) : null}
       <Text dimColor>{divider}</Text>

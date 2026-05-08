@@ -1,6 +1,6 @@
 import type { SkillInfo } from "../session";
 
-export type SlashCommandKind = "skill" | "skills" | "goal" | "compact" | "diff" | "copy" | "clear" | "new" | "resume" | "exit";
+export type SlashCommandKind = "skill" | "skills" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "new" | "resume" | "exit";
 
 export type SlashCommandItem = {
   kind: SlashCommandKind;
@@ -46,6 +46,18 @@ export const BUILTIN_SLASH_COMMANDS: SlashCommandItem[] = [
     name: "clear",
     label: "/clear",
     description: "Clear the terminal screen"
+  },
+  {
+    kind: "context",
+    name: "context",
+    label: "/context",
+    description: "Show context window token usage for the current session"
+  },
+  {
+    kind: "init",
+    name: "init",
+    label: "/init",
+    description: "Generate an AGENTS.md for this project"
   },
   {
     kind: "new",

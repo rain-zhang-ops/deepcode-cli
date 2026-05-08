@@ -43,10 +43,11 @@ type View = "chat" | "session-list";
 type AppProps = {
   projectRoot: string;
   version?: string;
+  resumeSessionId?: string;
   onRestart?: () => void;
 };
 
-export function App({ projectRoot, version = "", onRestart }: AppProps): React.ReactElement {
+export function App({ projectRoot, version = "", resumeSessionId, onRestart }: AppProps): React.ReactElement {
   const { exit } = useApp();
   const { stdout, write } = useStdout();
   const [view, setView] = useState<View>("chat");
@@ -63,6 +64,7 @@ export function App({ projectRoot, version = "", onRestart }: AppProps): React.R
   const [isExiting, setIsExiting] = useState(false);
   const [showWelcome, setShowWelcome] = useState(true);
   const [, setNowTick] = useState(0);
+  const turnStartRef = useRef<number>(0);
 
   const messagesRef = useRef<SessionMessage[]>([]);
   messagesRef.current = messages;
@@ -102,6 +104,18 @@ export function App({ projectRoot, version = "", onRestart }: AppProps): React.R
   useEffect(() => {
     refreshSessionsList();
     void refreshSkills();
+    // Resume a specific session when provided via --continue flag
+    if (resumeSessionId) {
+      sessionManager.setActiveSessionId(resumeSessionId);
+      setMessages(loadVisibleMessages(sessionManager, resumeSessionId));
+      const session = sessionManager.getSession(resumeSessionId);
+      setStatusLine(session ? buildStatusLine(session) : "");
+      setRunningProcesses(session?.processes ?? null);
+      setActiveStatus(session?.status ?? null);
+      setShowWelcome(false);
+      setView("chat");
+      void refreshSkills(resumeSessionId);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -179,7 +193,7 @@ export function App({ projectRoot, version = "", onRestart }: AppProps): React.R
           const ok = writeClipboardText(lastAssistant.content);
           setMessages((prev) => [
             ...prev,
-            buildSyntheticAssistantMessage(ok ? "Copied to clipboard." : "Could not write to clipboard (is xclip / pbcopy installed?).")
+            buildSyntheticAssistantMessage(ok ? "Copied to clipboard." : "Could not write to clipboard. Ensure clipboard utilities are available for your system (pbcopy, xclip/xsel/wl-copy, or PowerShell).")
           ]);
         } else {
           setMessages((prev) => [
@@ -245,6 +259,79 @@ export function App({ projectRoot, version = "", onRestart }: AppProps): React.R
         }
         return;
       }
+      if (submission.command === "context") {
+        const activeSessionId = sessionManager.getActiveSessionId();
+        if (!activeSessionId) {
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage("No active session.")]);
+          return;
+        }
+        const entry = sessionManager.getSession(activeSessionId);
+        const tokens = entry?.activeTokens ?? 0;
+        const totalUsage = entry?.usage;
+        let totalTokens = 0;
+        if (totalUsage && typeof totalUsage === "object") {
+          const u = totalUsage as Record<string, unknown>;
+          if (typeof u.total_tokens === "number") {
+            totalTokens = u.total_tokens;
+          }
+        }
+        const lines = [
+          "**Context Window Usage**",
+          "",
+          `- Active tokens (last response): ${tokens.toLocaleString()}`,
+          `- Total tokens used (session): ${totalTokens.toLocaleString()}`,
+          "",
+          "_Tip: use `/compact` to free up context window space._"
+        ];
+        setMessages((prev) => [...prev, buildSyntheticAssistantMessage(lines.join("\n"))]);
+        return;
+      }
+      if (submission.command === "save-memory") {
+        const note = submission.text ?? "";
+        if (note.trim()) {
+          const ok = sessionManager.appendAgentNote(note.trim());
+          setMessages((prev) => [
+            ...prev,
+            buildSyntheticUserMessage(`# ${note}`, 0),
+            buildSyntheticAssistantMessage(
+              ok
+                ? `Saved to AGENTS.md: _"${note}"_`
+                : "Could not write to AGENTS.md — check file permissions."
+            )
+          ]);
+        }
+        return;
+      }
+      if (submission.command === "init") {
+        const agentsPath = path.join(projectRoot, "AGENTS.md");
+        if (fs.existsSync(agentsPath)) {
+          setMessages((prev) => [
+            ...prev,
+            buildSyntheticAssistantMessage(`AGENTS.md already exists at \`${agentsPath}\`. Edit it manually or delete it first.`)
+          ]);
+          return;
+        }
+        const initMsg = buildSyntheticAssistantMessage("Generating AGENTS.md for this project…");
+        setMessages((prev) => [...prev, initMsg]);
+        setBusy(true);
+        setErrorLine(null);
+        try {
+          await sessionManager.generateAgentsMd(projectRoot);
+          setMessages((prev) => [
+            ...prev.filter((m) => m.id !== initMsg.id),
+            buildSyntheticAssistantMessage(`Created \`${agentsPath}\`. It will be loaded on the next session start.`)
+          ]);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setMessages((prev) => [
+            ...prev.filter((m) => m.id !== initMsg.id),
+            buildSyntheticAssistantMessage(`Failed to generate AGENTS.md: ${message}`)
+          ]);
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
 
       const goalText = submission.command === "goal" ? (submission.text ?? "").trim() : "";
       const promptText = goalText
@@ -277,10 +364,19 @@ export function App({ projectRoot, version = "", onRestart }: AppProps): React.R
       }
 
       setBusy(true);
+      turnStartRef.current = Date.now();
       setErrorLine(null);
       setRunningProcesses(null);
       try {
         await sessionManager.handleUserPrompt(prompt);
+        const elapsed = Date.now() - turnStartRef.current;
+        const elapsedStr = elapsed >= 60000
+          ? `${Math.floor(elapsed / 60000)}m ${Math.round((elapsed % 60000) / 1000)}s`
+          : `${(elapsed / 1000).toFixed(1)}s`;
+        setMessages((prev) => [
+          ...prev,
+          buildSyntheticAssistantMessage(`_Done in ${elapsedStr}_`)
+        ]);
         await refreshSkills();
         refreshSessionsList();
       } catch (error) {
