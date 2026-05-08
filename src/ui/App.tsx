@@ -4,6 +4,7 @@ import chalk from "chalk";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { execSync } from "child_process";
 import OpenAI from "openai";
 import {
   SessionManager,
@@ -28,19 +29,25 @@ import {
   type AskUserQuestionAnswers
 } from "./askUserQuestion";
 import { buildExitSummaryText } from "./exitSummary";
+import { writeClipboardText } from "./clipboard";
 
 const DEFAULT_MODEL = "deepseek-v4-pro";
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
+const GOAL_MODE_INSTRUCTIONS = [
+  "Operate in autonomous goal mode: keep taking concrete actions toward the goal.",
+  "If one turn ends before the goal is complete, continue proactively in subsequent turns until completion or user interruption."
+].join("\n");
 
 type View = "chat" | "session-list";
 
 type AppProps = {
   projectRoot: string;
   version?: string;
+  resumeSessionId?: string;
   onRestart?: () => void;
 };
 
-export function App({ projectRoot, version = "", onRestart }: AppProps): React.ReactElement {
+export function App({ projectRoot, version = "", resumeSessionId, onRestart }: AppProps): React.ReactElement {
   const { exit } = useApp();
   const { stdout, write } = useStdout();
   const [view, setView] = useState<View>("chat");
@@ -57,6 +64,7 @@ export function App({ projectRoot, version = "", onRestart }: AppProps): React.R
   const [isExiting, setIsExiting] = useState(false);
   const [showWelcome, setShowWelcome] = useState(true);
   const [, setNowTick] = useState(0);
+  const turnStartRef = useRef<number>(0);
 
   const messagesRef = useRef<SessionMessage[]>([]);
   messagesRef.current = messages;
@@ -96,6 +104,18 @@ export function App({ projectRoot, version = "", onRestart }: AppProps): React.R
   useEffect(() => {
     refreshSessionsList();
     void refreshSkills();
+    // Resume a specific session when provided via --continue flag
+    if (resumeSessionId) {
+      sessionManager.setActiveSessionId(resumeSessionId);
+      setMessages(loadVisibleMessages(sessionManager, resumeSessionId));
+      const session = sessionManager.getSession(resumeSessionId);
+      setStatusLine(session ? buildStatusLine(session) : "");
+      setRunningProcesses(session?.processes ?? null);
+      setActiveStatus(session?.status ?? null);
+      setShowWelcome(false);
+      setView("chat");
+      void refreshSkills(resumeSessionId);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -161,16 +181,176 @@ export function App({ projectRoot, version = "", onRestart }: AppProps): React.R
         setView("session-list");
         return;
       }
+      if (submission.command === "clear") {
+        write("\u001B[2J\u001B[3J\u001B[H");
+        return;
+      }
+      if (submission.command === "copy") {
+        const lastAssistant = [...messagesRef.current]
+          .reverse()
+          .find((m) => m.role === "assistant" && typeof m.content === "string" && m.content.trim());
+        if (lastAssistant && typeof lastAssistant.content === "string") {
+          const ok = writeClipboardText(lastAssistant.content);
+          setMessages((prev) => [
+            ...prev,
+            buildSyntheticAssistantMessage(ok ? "Copied to clipboard." : "Could not write to clipboard. Ensure clipboard utilities are available for your system (pbcopy, xclip/xsel/wl-copy, or PowerShell).")
+          ]);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            buildSyntheticAssistantMessage("No assistant response to copy yet.")
+          ]);
+        }
+        return;
+      }
+      if (submission.command === "diff") {
+        let diffOutput: string;
+        try {
+          diffOutput = execSync("git diff", { cwd: projectRoot, encoding: "utf8" });
+          if (!diffOutput.trim()) {
+            diffOutput = "(no uncommitted changes)";
+          }
+        } catch {
+          diffOutput = "(not a git repository or git is not available)";
+        }
+        setMessages((prev) => [
+          ...prev,
+          buildSyntheticAssistantMessage(`\`\`\`diff\n${diffOutput}\n\`\`\``)
+        ]);
+        return;
+      }
+      if (submission.command === "compact") {
+        const activeSessionId = sessionManager.getActiveSessionId();
+        if (!activeSessionId) {
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage("No active session to compact.")]);
+          return;
+        }
+        const compactMsg = buildSyntheticAssistantMessage("Compacting conversation…");
+        setMessages((prev) => [...prev, compactMsg]);
+        setBusy(true);
+        setErrorLine(null);
+        try {
+          await sessionManager.compactSession(activeSessionId);
+          setMessages((prev) => [
+            ...prev.filter((m) => m.id !== compactMsg.id),
+            buildSyntheticAssistantMessage("Conversation compacted.")
+          ]);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setMessages((prev) => [
+            ...prev.filter((m) => m.id !== compactMsg.id),
+            buildSyntheticAssistantMessage(`Compaction failed: ${message}`)
+          ]);
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
+      if (submission.command === "backtrack") {
+        const activeSessionId = sessionManager.getActiveSessionId();
+        if (activeSessionId) {
+          sessionManager.rollbackLastExchange(activeSessionId);
+          const updated = sessionManager.listSessionMessages(activeSessionId).filter((m) => m.visible);
+          setMessages(updated);
+          setStatusLine("");
+        } else {
+          // If no session just clear the visible message list
+          setMessages([]);
+        }
+        return;
+      }
+      if (submission.command === "context") {
+        const activeSessionId = sessionManager.getActiveSessionId();
+        if (!activeSessionId) {
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage("No active session.")]);
+          return;
+        }
+        const entry = sessionManager.getSession(activeSessionId);
+        const tokens = entry?.activeTokens ?? 0;
+        const totalUsage = entry?.usage;
+        let totalTokens = 0;
+        if (totalUsage && typeof totalUsage === "object") {
+          const u = totalUsage as Record<string, unknown>;
+          if (typeof u.total_tokens === "number") {
+            totalTokens = u.total_tokens;
+          }
+        }
+        const lines = [
+          "**Context Window Usage**",
+          "",
+          `- Active tokens (last response): ${tokens.toLocaleString()}`,
+          `- Total tokens used (session): ${totalTokens.toLocaleString()}`,
+          "",
+          "_Tip: use `/compact` to free up context window space._"
+        ];
+        setMessages((prev) => [...prev, buildSyntheticAssistantMessage(lines.join("\n"))]);
+        return;
+      }
+      if (submission.command === "save-memory") {
+        const note = submission.text ?? "";
+        if (note.trim()) {
+          const ok = sessionManager.appendAgentNote(note.trim());
+          setMessages((prev) => [
+            ...prev,
+            buildSyntheticUserMessage(`# ${note}`, 0),
+            buildSyntheticAssistantMessage(
+              ok
+                ? `Saved to AGENTS.md: _"${note}"_`
+                : "Could not write to AGENTS.md — check file permissions."
+            )
+          ]);
+        }
+        return;
+      }
+      if (submission.command === "init") {
+        const agentsPath = path.join(projectRoot, "AGENTS.md");
+        if (fs.existsSync(agentsPath)) {
+          setMessages((prev) => [
+            ...prev,
+            buildSyntheticAssistantMessage(`AGENTS.md already exists at \`${agentsPath}\`. Edit it manually or delete it first.`)
+          ]);
+          return;
+        }
+        const initMsg = buildSyntheticAssistantMessage("Generating AGENTS.md for this project…");
+        setMessages((prev) => [...prev, initMsg]);
+        setBusy(true);
+        setErrorLine(null);
+        try {
+          await sessionManager.generateAgentsMd(projectRoot);
+          setMessages((prev) => [
+            ...prev.filter((m) => m.id !== initMsg.id),
+            buildSyntheticAssistantMessage(`Created \`${agentsPath}\`. It will be loaded on the next session start.`)
+          ]);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setMessages((prev) => [
+            ...prev.filter((m) => m.id !== initMsg.id),
+            buildSyntheticAssistantMessage(`Failed to generate AGENTS.md: ${message}`)
+          ]);
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
+
+      const goalText = submission.command === "goal" ? (submission.text ?? "").trim() : "";
+      const promptText = goalText
+        ? [
+          `Goal: ${goalText}`,
+          "",
+          GOAL_MODE_INSTRUCTIONS
+        ].join("\n")
+        : submission.text;
 
       const prompt: UserPromptContent = {
-        text: submission.text,
+        text: promptText,
         imageUrls: submission.imageUrls,
         skills: submission.selectedSkills && submission.selectedSkills.length > 0
           ? submission.selectedSkills
           : undefined
       };
 
-      const trimmedText = (submission.text ?? "").trim();
+      const trimmedText = (goalText || submission.text || "").trim();
       const selectedSkillNames = submission.selectedSkills?.map((skill) => skill.name).filter(Boolean) ?? [];
       const userDisplayContent = trimmedText
         || (selectedSkillNames.length > 0 ? `Use skills: ${selectedSkillNames.join(", ")}` : "")
@@ -184,10 +364,24 @@ export function App({ projectRoot, version = "", onRestart }: AppProps): React.R
       }
 
       setBusy(true);
+      turnStartRef.current = Date.now();
       setErrorLine(null);
       setRunningProcesses(null);
       try {
         await sessionManager.handleUserPrompt(prompt);
+        // Only show duration for completed turns, not interrupted ones
+        const activeSessionId = sessionManager.getActiveSessionId();
+        const finalSession = activeSessionId ? sessionManager.getSession(activeSessionId) : null;
+        if (finalSession?.status !== "interrupted") {
+          const elapsed = Date.now() - turnStartRef.current;
+          const elapsedStr = elapsed >= 60000
+            ? `${Math.floor(elapsed / 60000)}m ${Math.round((elapsed % 60000) / 1000)}s`
+            : `${(elapsed / 1000).toFixed(1)}s`;
+          setMessages((prev) => [
+            ...prev,
+            buildSyntheticAssistantMessage(`_Done in ${elapsedStr}_`)
+          ]);
+        }
         await refreshSkills();
         refreshSessionsList();
       } catch (error) {
@@ -199,7 +393,7 @@ export function App({ projectRoot, version = "", onRestart }: AppProps): React.R
         setRunningProcesses(null);
       }
     },
-    [exit, onRestart, sessionManager, write]
+    [exit, onRestart, projectRoot, sessionManager, write]
   );
 
   const handleInterrupt = useCallback(() => {
@@ -369,6 +563,22 @@ function buildSyntheticUserMessage(content: string, imageCount: number): Session
   };
 }
 
+function buildSyntheticAssistantMessage(content: string): SessionMessage {
+  const now = new Date().toISOString();
+  return {
+    id: `local-${Math.random().toString(36).slice(2)}`,
+    sessionId: "local",
+    role: "assistant",
+    content,
+    contentParams: null,
+    messageParams: null,
+    compacted: false,
+    visible: true,
+    createTime: now,
+    updateTime: now
+  };
+}
+
 function buildStatusLine(entry: SessionEntry): string {
   const parts: string[] = [];
   parts.push(`status: ${entry.status}`);
@@ -408,6 +618,8 @@ export function createOpenAIClient(): {
   thinkingEnabled: boolean;
   reasoningEffort: "high" | "max";
   debugLogEnabled: boolean;
+  timeout?: number;
+  maxRetries?: number;
   notify?: string;
   webSearchTool?: string;
   machineId?: string;
@@ -421,6 +633,8 @@ export function createOpenAIClient(): {
       thinkingEnabled: settings.thinkingEnabled,
       reasoningEffort: settings.reasoningEffort,
       debugLogEnabled: settings.debugLogEnabled,
+      timeout: settings.timeout,
+      maxRetries: settings.maxRetries,
       notify: settings.notify,
       webSearchTool: settings.webSearchTool,
       machineId: getMachineId()
@@ -429,7 +643,9 @@ export function createOpenAIClient(): {
 
   const client = new OpenAI({
     apiKey: settings.apiKey,
-    baseURL: settings.baseURL || undefined
+    baseURL: settings.baseURL || undefined,
+    timeout: settings.timeout,
+    maxRetries: settings.maxRetries
   });
   return {
     client,
@@ -438,6 +654,8 @@ export function createOpenAIClient(): {
     thinkingEnabled: settings.thinkingEnabled,
     reasoningEffort: settings.reasoningEffort,
     debugLogEnabled: settings.debugLogEnabled,
+    timeout: settings.timeout,
+    maxRetries: settings.maxRetries,
     notify: settings.notify,
     webSearchTool: settings.webSearchTool,
     machineId: getMachineId()

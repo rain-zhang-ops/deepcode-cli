@@ -38,27 +38,28 @@ function splitByFences(text: string): FenceSegment[] {
   };
 
   for (const line of lines) {
-    const fenceMatch = /^\s*```(\w*)\s*$/.exec(line);
-    if (fenceMatch) {
-      if (!inFence) {
-        flushText();
-        inFence = true;
-        fenceLang = fenceMatch[1] ?? "";
-        fenceBody = [];
-      } else {
-        segments.push({ kind: "code", lang: fenceLang, body: fenceBody.join("\n") });
-        inFence = false;
-        fenceLang = "";
-        fenceBody = [];
+    if (!inFence) {
+      const fenceStartMatch = /^\s*```([^\s`]+)?.*$/.exec(line);
+      if (!fenceStartMatch) {
+        buffer.push(line);
+        continue;
       }
+      flushText();
+      inFence = true;
+      fenceLang = fenceStartMatch[1] ?? "";
+      fenceBody = [];
       continue;
     }
 
-    if (inFence) {
-      fenceBody.push(line);
-    } else {
-      buffer.push(line);
+    if (/^\s*```\s*$/.test(line)) {
+      segments.push({ kind: "code", lang: fenceLang, body: fenceBody.join("\n") });
+      inFence = false;
+      fenceLang = "";
+      fenceBody = [];
+      continue;
     }
+
+    fenceBody.push(line);
   }
 
   if (inFence) {

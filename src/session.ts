@@ -152,7 +152,7 @@ type SessionManagerOptions = {
   createOpenAIClient: CreateOpenAIClient;
   getResolvedSettings: () => { webSearchTool?: string };
   renderMarkdown: (text: string) => string;
-  onAssistantMessage: (message: SessionMessage, shouldConnect: boolean) => void;
+  onAssistantMessage?: (message: SessionMessage, shouldConnect: boolean) => void;
   onSessionEntryUpdated?: (entry: SessionEntry) => void;
   onLlmStreamProgress?: (progress: LlmStreamProgress) => void;
 };
@@ -170,7 +170,7 @@ export class SessionManager {
   private readonly projectRoot: string;
   private readonly createOpenAIClient: CreateOpenAIClient;
   private readonly getResolvedSettings: () => { webSearchTool?: string };
-  private readonly onAssistantMessage: (message: SessionMessage, shouldConnect: boolean) => void;
+  private readonly onAssistantMessage?: (message: SessionMessage, shouldConnect: boolean) => void;
   private readonly onSessionEntryUpdated?: (entry: SessionEntry) => void;
   private readonly onLlmStreamProgress?: (progress: LlmStreamProgress) => void;
   private activeSessionId: string | null = null;
@@ -740,6 +740,146 @@ The candidate skills are as follows:\n\n`;
     this.activeSessionId = sessionId;
   }
 
+  /**
+   * Remove the last user message and the assistant reply that followed it from
+   * the session (Esc-backtrack feature, analogous to Codex backtracking).
+   * Only visible, non-compacted messages are considered.
+   */
+  rollbackLastExchange(sessionId: string): void {
+    const messages = this.listSessionMessages(sessionId);
+    // Find the last visible user message index
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === "user" && messages[i].visible && !messages[i].compacted) {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx === -1) {
+      return;
+    }
+    // Remove all messages from lastUserIdx onward that are visible and not system
+    const kept = messages.filter(
+      (m, idx) => idx < lastUserIdx || m.role === "system"
+    );
+    this.saveSessionMessages(sessionId, kept);
+    // Reset session status
+    this.updateSessionEntry(sessionId, (entry) => ({
+      ...entry,
+      status: "completed",
+      assistantReply: null,
+      assistantThinking: null,
+      toolCalls: null,
+      updateTime: new Date().toISOString()
+    }));
+  }
+
+  /**
+   * Append a short note to the project-level AGENTS.md (# prefix shortcut, from Claude Code).
+   * Returns true on success, false if the write failed.
+   */
+  appendAgentNote(note: string): boolean {
+    const agentsPath = path.join(this.projectRoot, "AGENTS.md");
+    try {
+      const header = fs.existsSync(agentsPath) ? "" : "# Project Notes\n\n";
+      fs.appendFileSync(agentsPath, `${header}- ${note}\n`, "utf8");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Generate an AGENTS.md for the project using the LLM (analogous to Claude Code's /init).
+   */
+  async generateAgentsMd(projectRoot: string): Promise<void> {
+    const { client, model, baseURL, thinkingEnabled, reasoningEffort, debugLogEnabled } = this.createOpenAIClient();
+    if (!client) {
+      throw new Error("No API client configured.");
+    }
+
+    // Build a compact picture of the project structure using pure Node.js (no shell injection risk)
+    const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".next", "build", "coverage", ".cache"]);
+    const filePaths: string[] = [];
+    function collectPaths(dir: string, depth: number): void {
+      if (depth > 3 || filePaths.length >= 80) {
+        return;
+      }
+      let entries: string[];
+      try {
+        entries = fs.readdirSync(dir);
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (filePaths.length >= 80) {
+          break;
+        }
+        if (SKIP_DIRS.has(entry)) {
+          continue;
+        }
+        const fullPath = path.join(dir, entry);
+        const rel = path.relative(projectRoot, fullPath);
+        filePaths.push(rel);
+        let isDir = false;
+        try {
+          isDir = fs.statSync(fullPath).isDirectory();
+        } catch { /* skip unreadable */ }
+        if (isDir) {
+          collectPaths(fullPath, depth + 1);
+        }
+      }
+    }
+    collectPaths(projectRoot, 0);
+    const treeOutput = filePaths.length > 0 ? filePaths.join("\n") : "(could not list project files)";
+
+    // Also read package.json if present
+    let pkgJson = "";
+    try {
+      const pkgPath = path.join(projectRoot, "package.json");
+      if (fs.existsSync(pkgPath)) {
+        pkgJson = fs.readFileSync(pkgPath, "utf8").slice(0, 2000);
+      }
+    } catch { /* ignore */ }
+
+    const prompt = [
+      "You are helping set up an AGENTS.md file for a software project.",
+      "An AGENTS.md is a concise Markdown document that provides AI coding assistants with key context about the project.",
+      "",
+      "Project files:",
+      "```",
+      treeOutput.trim(),
+      "```",
+      pkgJson ? `\npackage.json (truncated):\n\`\`\`json\n${pkgJson}\n\`\`\`` : "",
+      "",
+      "Write a concise AGENTS.md that covers:",
+      "1. Project overview (1-2 sentences)",
+      "2. Build/test commands",
+      "3. Key conventions or constraints",
+      "4. Directory structure highlights",
+      "",
+      "Keep it under 300 words. Use Markdown headings. Output ONLY the Markdown content, no preamble."
+    ].filter((line) => line !== undefined).join("\n");
+
+    const thinkingOptions = buildThinkingRequestOptions(thinkingEnabled, baseURL, reasoningEffort);
+    const response = await this.createChatCompletionStream(client, {
+      model,
+      messages: [{ role: "user", content: prompt }],
+      ...thinkingOptions
+    }, undefined, undefined, {
+      enabled: debugLogEnabled,
+      location: "SessionManager.generateAgentsMd",
+      baseURL
+    });
+
+    const rawContent = response.choices?.[0]?.message?.content;
+    const content = typeof rawContent === "string" ? rawContent.trim() : "";
+    if (!content) {
+      throw new Error("Model returned empty content.");
+    }
+    fs.writeFileSync(path.join(projectRoot, "AGENTS.md"), content + "\n", "utf8");
+  }
+
   async handleUserPrompt(userPrompt: UserPromptContent): Promise<void> {
     const controller = new AbortController();
     this.activePromptController = controller;
@@ -845,7 +985,7 @@ ${skillMd}
 </${skill.name}-skill>`;
         const skillMessage = this.buildSkillMessage(sessionId, skillPrompt, skill);
         this.appendSessionMessage(sessionId, skillMessage);
-        this.onAssistantMessage(skillMessage, true);
+        this.onAssistantMessage?.(skillMessage, true);
       }
     }
 
@@ -902,7 +1042,7 @@ ${skillMd}
 </${skill.name}-skill>`;
         const skillMessage = this.buildSkillMessage(sessionId, skillPrompt, skill);
         this.appendSessionMessage(sessionId, skillMessage);
-        this.onAssistantMessage(skillMessage, true);
+        this.onAssistantMessage?.(skillMessage, true);
       }
     }
     this.activeSessionId = sessionId;
@@ -921,7 +1061,7 @@ ${skillMd}
         failReason: "OpenAI API key not found",
         updateTime: now
       }));
-      this.onAssistantMessage(
+      this.onAssistantMessage?.(
         this.buildAssistantMessage(sessionId, "OpenAI API key not found. Please configure ~/.deepcode/settings.json.", null),
         false,
       );
@@ -967,7 +1107,7 @@ ${skillMd}
         if (session.activeTokens > compactPromptTokenThreshold) {
           const message = this.buildAssistantMessage(sessionId, "The conversation is getting long, compacting...", null);
           message.meta = { asThinking: true };
-          this.onAssistantMessage(message, false);
+          this.onAssistantMessage?.(message, false);
           await this.compactSession(sessionId, sessionController.signal);
         }
 
@@ -1006,7 +1146,7 @@ ${skillMd}
         }
         const assistantMessage = this.buildAssistantMessage(sessionId, content, toolCalls, thinking);
         this.appendSessionMessage(sessionId, assistantMessage);
-        this.onAssistantMessage(assistantMessage, true);
+        this.onAssistantMessage?.(assistantMessage, true);
 
         let waitingForUser = false;
         if (toolCalls) {
@@ -1056,7 +1196,7 @@ ${skillMd}
         status: "completed",
         updateTime: new Date().toISOString()
       }));
-      this.onAssistantMessage(
+      this.onAssistantMessage?.(
         this.buildAssistantMessage(sessionId, "The AI agent has taken several steps but hasn't reached a conclusion yet. Do you want to continue?", null),
         false,
       )
@@ -1071,7 +1211,7 @@ ${skillMd}
       }));
 
       if (!aborted) {
-        this.onAssistantMessage(
+        this.onAssistantMessage?.(
           this.buildAssistantMessage(sessionId, `Request failed: ${errMessage}`, null),
           false,
         );
@@ -1170,33 +1310,42 @@ ${skillMd}
   }
 
   private reportNewPrompt(): void {
-    const { machineId } = this.createOpenAIClient();
+    const { machineId, debugLogEnabled } = this.createOpenAIClient();
     if (!machineId) {
       return;
     }
 
-    void fetch(DEFAULT_NEW_PROMPT_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Token: machineId
-      },
-      body: JSON.stringify({})
-    })
-      .then(async (response) => {
-        if (response.ok) {
-          return;
-        }
+    const reportFailure = (error: unknown): void => {
+      if (!debugLogEnabled) {
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Failed to report new prompt: ${message}`);
+    };
 
-        const body = await response.text().catch(() => "");
-        throw new Error(
-          `New prompt API request failed with status ${response.status}${body ? `: ${body}` : ""}`
-        );
+    try {
+      void fetch(DEFAULT_NEW_PROMPT_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Token: machineId
+        },
+        body: JSON.stringify({})
       })
-      .catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(`Failed to report new prompt: ${message}`);
-      });
+        .then(async (response) => {
+          if (response.ok) {
+            return;
+          }
+
+          const body = await response.text().catch(() => "");
+          throw new Error(
+            `New prompt API request failed with status ${response.status}${body ? `: ${body}` : ""}`
+          );
+        })
+        .catch(reportFailure);
+    } catch (error) {
+      reportFailure(error);
+    }
   }
 
   interruptActiveSession(): void {
@@ -1253,7 +1402,7 @@ ${skillMd}
       contentParts.push(`Failed to kill processes: ${failedPids.join(", ")}.`);
     }
 
-    this.onAssistantMessage(
+    this.onAssistantMessage?.(
       this.buildUserMessage(sessionId, { text: contentParts.join(" ") }),
       false,
     );
@@ -1594,7 +1743,7 @@ ${skillMd}
         toolFunction
       );
       this.appendSessionMessage(sessionId, toolMessage);
-      this.onAssistantMessage(toolMessage, true);
+      this.onAssistantMessage?.(toolMessage, true);
 
       for (const followUpMessage of execution.result.followUpMessages ?? []) {
         if (followUpMessage.role !== "system") {

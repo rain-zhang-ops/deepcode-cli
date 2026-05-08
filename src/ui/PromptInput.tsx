@@ -35,7 +35,7 @@ export type PromptSubmission = {
   text: string;
   imageUrls: string[];
   selectedSkills?: SkillInfo[];
-  command?: "new" | "resume" | "exit";
+  command?: "new" | "resume" | "exit" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "save-memory" | "backtrack";
 };
 
 type Props = {
@@ -100,6 +100,7 @@ export function PromptInput({
   const [selectedSkills, setSelectedSkills] = useState<SkillInfo[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [pendingExit, setPendingExit] = useState(false);
+  const [pendingBacktrack, setPendingBacktrack] = useState(false);
   const [menuIndex, setMenuIndex] = useState(0);
   const [showSkillsDropdown, setShowSkillsDropdown] = useState(false);
   const [skillsDropdownIndex, setSkillsDropdownIndex] = useState(0);
@@ -112,6 +113,8 @@ export function PromptInput({
   const slashItems = useMemo(() => buildSlashCommands(skills), [skills]);
   const slashToken = getCurrentSlashToken(buffer);
   const slashMenu = showSkillsDropdown ? [] : slashToken ? filterSlashCommands(slashItems, slashToken) : [];
+  const SLASH_MENU_VISIBLE_MAX = 10;
+  const slashMenuVisible = slashMenu.slice(0, SLASH_MENU_VISIBLE_MAX);
   const showMenu = slashMenu.length > 0;
   const promptHistoryKey = useMemo(() => promptHistory.join("\0"), [promptHistory]);
   const promptPrefix = busy ? `${SPINNER_FRAMES[spinnerIndex]} ` : "> ";
@@ -121,7 +124,7 @@ export function PromptInput({
       ? loadingText && loadingText.trim()
         ? loadingText
         : "esc to interrupt · ctrl+c to cancel input"
-      : "enter send · shift+enter newline · ctrl+v image · / commands · ctrl+d exit";
+      : "enter send · shift+enter newline · ctrl+v image · / commands · # note · ctrl+d exit";
   const cursorPlacement = useMemo(
     () => getPromptCursorPlacement(buffer, screenWidth, promptPrefix, footerText),
     [buffer, footerText, promptPrefix, screenWidth]
@@ -146,10 +149,10 @@ export function PromptInput({
       setMenuIndex(0);
       return;
     }
-    if (menuIndex >= slashMenu.length) {
-      setMenuIndex(slashMenu.length - 1);
+    if (menuIndex >= slashMenuVisible.length) {
+      setMenuIndex(slashMenuVisible.length - 1);
     }
-  }, [slashMenu, showMenu, menuIndex]);
+  }, [slashMenuVisible, showMenu, menuIndex]);
 
   useEffect(() => {
     if (skillsDropdownIndex >= skills.length) {
@@ -192,8 +195,26 @@ export function PromptInput({
       if (busy) {
         onInterrupt();
         setStatusMessage("Interrupting…");
+        return;
       }
+      if (!isEmpty(buffer)) {
+        setBuffer(EMPTY_BUFFER);
+        setPendingBacktrack(false);
+        return;
+      }
+      // Empty buffer – backtrack priming (like Codex)
+      if (pendingBacktrack) {
+        setPendingBacktrack(false);
+        onSubmit({ text: "", imageUrls: [], command: "backtrack" });
+        return;
+      }
+      setPendingBacktrack(true);
+      setStatusMessage("Press esc again to undo the last exchange, or any key to cancel");
       return;
+    }
+
+    if (pendingBacktrack) {
+      setPendingBacktrack(false);
     }
 
     if (key.ctrl && (input === "d" || input === "D")) {
@@ -284,15 +305,15 @@ export function PromptInput({
 
     if (showMenu) {
       if (key.upArrow) {
-        setMenuIndex((idx) => (idx - 1 + slashMenu.length) % slashMenu.length);
+        setMenuIndex((idx) => (idx - 1 + slashMenuVisible.length) % slashMenuVisible.length);
         return;
       }
       if (key.downArrow) {
-        setMenuIndex((idx) => (idx + 1) % slashMenu.length);
+        setMenuIndex((idx) => (idx + 1) % slashMenuVisible.length);
         return;
       }
       if (key.tab || (key.return && !key.shift && !key.meta)) {
-        const selected = slashMenu[menuIndex];
+        const selected = slashMenuVisible[menuIndex];
         if (selected) {
           handleSlashSelection(selected);
           return;
@@ -507,6 +528,41 @@ export function PromptInput({
       setBuffer(EMPTY_BUFFER);
       return;
     }
+    if (item.kind === "goal") {
+      clearSlashToken();
+      setBuffer((state) => insertText(state, "/goal "));
+      return;
+    }
+    if (item.kind === "compact") {
+      onSubmit({ text: "", imageUrls: [], command: "compact" });
+      setBuffer(EMPTY_BUFFER);
+      return;
+    }
+    if (item.kind === "diff") {
+      onSubmit({ text: "", imageUrls: [], command: "diff" });
+      setBuffer(EMPTY_BUFFER);
+      return;
+    }
+    if (item.kind === "copy") {
+      onSubmit({ text: "", imageUrls: [], command: "copy" });
+      setBuffer(EMPTY_BUFFER);
+      return;
+    }
+    if (item.kind === "clear") {
+      onSubmit({ text: "", imageUrls: [], command: "clear" });
+      setBuffer(EMPTY_BUFFER);
+      return;
+    }
+    if (item.kind === "context") {
+      onSubmit({ text: "", imageUrls: [], command: "context" });
+      setBuffer(EMPTY_BUFFER);
+      return;
+    }
+    if (item.kind === "init") {
+      onSubmit({ text: "", imageUrls: [], command: "init" });
+      setBuffer(EMPTY_BUFFER);
+      return;
+    }
   }
 
   function submitCurrentBuffer(): void {
@@ -520,9 +576,40 @@ export function PromptInput({
       return;
     }
 
+    // # prefix shortcut: save note to AGENTS.md without sending to the model (from Claude Code)
+    if (trimmed.startsWith("#") && !trimmed.startsWith("#!")) {
+      const note = trimmed.slice(1).trim();
+      if (note) {
+        onSubmit({ text: note, imageUrls: [], command: "save-memory" });
+        setBuffer(EMPTY_BUFFER);
+        setImageUrls([]);
+        setSelectedSkills([]);
+        setShowSkillsDropdown(false);
+        return;
+      }
+    }
+
     if (trimmed.startsWith("/")) {
       const exactMatch = findExactSlashCommand(slashItems, trimmed.split(/\s+/, 1)[0]);
       if (exactMatch) {
+        if (exactMatch.kind === "goal") {
+          const goalText = trimmed.replace(/^\/goal\b/i, "").trim();
+          if (!goalText) {
+            setStatusMessage("usage: /goal <your objective>");
+            return;
+          }
+          onSubmit({
+            text: goalText,
+            imageUrls,
+            selectedSkills,
+            command: "goal"
+          });
+          setBuffer(EMPTY_BUFFER);
+          setImageUrls([]);
+          setSelectedSkills([]);
+          setShowSkillsDropdown(false);
+          return;
+        }
         handleSlashSelection(exactMatch);
         return;
       }
@@ -603,14 +690,16 @@ export function PromptInput({
       ) : null}
       {showMenu ? (
         <Box flexDirection="column" marginBottom={1}>
-          {slashMenu.slice(0, 8).map((item, idx) => (
+          {slashMenuVisible.map((item, idx) => (
             <Text key={item.label} color={idx === menuIndex ? "cyanBright" : undefined} wrap="truncate-end">
               {idx === menuIndex ? "› " : "  "}
               <Text bold>{formatSlashCommandLabel(item)}</Text>
               <Text dimColor>  {formatSlashCommandDescription(item.description)}</Text>
             </Text>
           ))}
-          {slashMenu.length > 8 ? <Text dimColor>… {slashMenu.length - 8} more</Text> : null}
+          {slashMenu.length > SLASH_MENU_VISIBLE_MAX ? (
+            <Text dimColor>  … {slashMenu.length - SLASH_MENU_VISIBLE_MAX} more</Text>
+          ) : null}
         </Box>
       ) : null}
       <Text dimColor>{divider}</Text>

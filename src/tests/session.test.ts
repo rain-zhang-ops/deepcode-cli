@@ -948,6 +948,73 @@ test("SessionManager treats OpenAI APIUserAbortError as interrupted", async () =
   assert.equal(session?.failReason, "interrupted");
 });
 
+test("SessionManager suppresses non-critical new prompt report failures by default", async () => {
+  const workspace = createTempDir("deepcode-report-new-prompt-workspace-");
+  const home = createTempDir("deepcode-report-new-prompt-home-");
+  process.env.HOME = home;
+
+  const manager = createSessionManager(workspace, "machine-1");
+  const originalWarn = console.warn;
+  const warnings: string[] = [];
+  console.warn = (message?: unknown, ...rest: unknown[]) => {
+    warnings.push([message, ...rest].map(String).join(" "));
+  };
+
+  globalThis.fetch = async () => {
+    throw new Error("fetch failed");
+  };
+
+  try {
+    await manager.createSession({ text: "hello" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.deepEqual(warnings, []);
+});
+
+test("SessionManager logs new prompt report failures when debug logging is enabled", async () => {
+  const workspace = createTempDir("deepcode-report-new-prompt-debug-workspace-");
+  const home = createTempDir("deepcode-report-new-prompt-debug-home-");
+  process.env.HOME = home;
+
+  const manager = new SessionManager({
+    projectRoot: workspace,
+    createOpenAIClient: () => ({
+      client: null,
+      model: "test-model",
+      baseURL: "https://api.deepseek.com",
+      thinkingEnabled: false,
+      machineId: "machine-1",
+      debugLogEnabled: true
+    }),
+    getResolvedSettings: () => ({}),
+    renderMarkdown: (text) => text,
+    onAssistantMessage: () => {}
+  });
+
+  const originalWarn = console.warn;
+  const warnings: string[] = [];
+  console.warn = (message?: unknown, ...rest: unknown[]) => {
+    warnings.push([message, ...rest].map(String).join(" "));
+  };
+
+  globalThis.fetch = async () => {
+    throw new Error("fetch failed");
+  };
+
+  try {
+    await manager.createSession({ text: "hello" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0] ?? "", /^Failed to report new prompt: fetch failed$/);
+});
+
 function createSessionManager(projectRoot: string, machineId: string): SessionManager {
   return new SessionManager({
     projectRoot,

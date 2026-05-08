@@ -31,6 +31,10 @@ const SHORTCUT_TIPS = [
   { label: "Ctrl+D twice", description: "Quit Deep Code CLI" }
 ];
 
+const RECOMMENDED_TIPS = [
+  { label: "rg + jq", description: "Install rg and jq to boost Bash exploration signal and information density" }
+];
+
 export function WelcomeScreen({
   projectRoot,
   settings,
@@ -136,7 +140,8 @@ export function buildWelcomeTips(skills: SkillInfo[]): Array<{ label: string; de
 
   return [
     ...slashTips,
-    ...SHORTCUT_TIPS.filter((tip) => !BUILTIN_SLASH_COMMANDS.some((command) => command.label === tip.label))
+    ...SHORTCUT_TIPS.filter((tip) => !BUILTIN_SLASH_COMMANDS.some((command) => command.label === tip.label)),
+    ...RECOMMENDED_TIPS
   ];
 }
 

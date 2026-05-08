@@ -1,6 +1,6 @@
 import type { SkillInfo } from "../session";
 
-export type SlashCommandKind = "skill" | "skills" | "new" | "resume" | "exit";
+export type SlashCommandKind = "skill" | "skills" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "new" | "resume" | "exit";
 
 export type SlashCommandItem = {
   kind: SlashCommandKind;
@@ -16,6 +16,48 @@ export const BUILTIN_SLASH_COMMANDS: SlashCommandItem[] = [
     name: "skills",
     label: "/skills",
     description: "List available skills"
+  },
+  {
+    kind: "goal",
+    name: "goal",
+    label: "/goal",
+    description: "Set a long-running goal and let the agent keep working"
+  },
+  {
+    kind: "compact",
+    name: "compact",
+    label: "/compact",
+    description: "Summarize old context to free up space in the context window"
+  },
+  {
+    kind: "diff",
+    name: "diff",
+    label: "/diff",
+    description: "Show the current git diff inline in the conversation"
+  },
+  {
+    kind: "copy",
+    name: "copy",
+    label: "/copy",
+    description: "Copy the last assistant response to the clipboard"
+  },
+  {
+    kind: "clear",
+    name: "clear",
+    label: "/clear",
+    description: "Clear the terminal screen"
+  },
+  {
+    kind: "context",
+    name: "context",
+    label: "/context",
+    description: "Show context window token usage for the current session"
+  },
+  {
+    kind: "init",
+    name: "init",
+    label: "/init",
+    description: "Generate an AGENTS.md for this project"
   },
   {
     kind: "new",

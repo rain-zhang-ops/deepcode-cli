@@ -14,6 +14,8 @@ export type DeepcodingSettings = {
   thinkingEnabled?: boolean;
   reasoningEffort?: ReasoningEffort;
   debugLogEnabled?: boolean;
+  timeout?: number;
+  maxRetries?: number;
   notify?: string;
   webSearchTool?: string;
 };
@@ -25,12 +27,26 @@ export type ResolvedDeepcodingSettings = {
   thinkingEnabled: boolean;
   reasoningEffort: ReasoningEffort;
   debugLogEnabled: boolean;
+  timeout?: number;
+  maxRetries?: number;
   notify?: string;
   webSearchTool?: string;
 };
 
 function resolveReasoningEffort(value: unknown): ReasoningEffort {
   return value === "high" || value === "max" ? value : "max";
+}
+
+/**
+ * Resolve a positive integer config value.
+ * Returns undefined for non-numeric, non-finite, zero, or negative inputs.
+ * Floors valid numeric inputs to avoid fractional milliseconds/retry counts.
+ */
+function resolvePositiveInteger(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return Math.floor(value);
 }
 
 function resolveThinkingEnabled(
@@ -66,6 +82,8 @@ export function resolveSettings(
     thinkingEnabled: resolveThinkingEnabled(settings, model),
     reasoningEffort: resolveReasoningEffort(settings?.reasoningEffort),
     debugLogEnabled: settings?.debugLogEnabled === true,
+    timeout: resolvePositiveInteger(settings?.timeout),
+    maxRetries: resolvePositiveInteger(settings?.maxRetries),
     notify: notify || undefined,
     webSearchTool: webSearchTool || undefined
   };

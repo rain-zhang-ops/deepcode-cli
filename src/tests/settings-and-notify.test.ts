@@ -1,7 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { buildNotifyEnv, formatDurationSeconds, launchNotifyScript, type NotifySpawn } from "../notify";
 import { resolveSettings } from "../settings";
+import { createOpenAIClient } from "../ui";
 
 test("resolveSettings reads top-level thinkingEnabled, notify, and webSearchTool", () => {
   const resolved = resolveSettings(
@@ -126,6 +130,68 @@ test("resolveSettings defaults invalid reasoning effort to max", () => {
   );
 
   assert.equal(resolved.reasoningEffort, "max");
+});
+
+test("resolveSettings reads timeout and maxRetries as positive integers", () => {
+  const resolved = resolveSettings(
+    {
+      timeout: 120000.9,
+      maxRetries: 3
+    },
+    {
+      model: "default-model",
+      baseURL: "https://default.example.com"
+    }
+  );
+
+  assert.equal(resolved.timeout, 120000);
+  assert.equal(resolved.maxRetries, 3);
+});
+
+test("resolveSettings ignores invalid timeout and maxRetries values", () => {
+  const resolved = resolveSettings(
+    {
+      timeout: 0,
+      maxRetries: -1
+    },
+    {
+      model: "default-model",
+      baseURL: "https://default.example.com"
+    }
+  );
+
+  assert.equal(resolved.timeout, undefined);
+  assert.equal(resolved.maxRetries, undefined);
+});
+
+test("createOpenAIClient exposes timeout and maxRetries from settings", () => {
+  const originalHome = process.env.HOME;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "deepcode-settings-home-"));
+  const settingsDir = path.join(tempHome, ".deepcode");
+  fs.mkdirSync(settingsDir, { recursive: true });
+  fs.writeFileSync(path.join(settingsDir, "settings.json"), JSON.stringify({
+    env: {
+      MODEL: "deepseek-v4-pro",
+      BASE_URL: "https://api.deepseek.com"
+    },
+    timeout: 120000,
+    maxRetries: 3
+  }), "utf8");
+
+  process.env.HOME = tempHome;
+
+  try {
+    const clientConfig = createOpenAIClient();
+    assert.equal(clientConfig.timeout, 120000);
+    assert.equal(clientConfig.maxRetries, 3);
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
 });
 
 test("formatDurationSeconds preserves sub-second precision and trims trailing zeros", () => {
