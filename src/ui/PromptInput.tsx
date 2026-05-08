@@ -35,7 +35,7 @@ export type PromptSubmission = {
   text: string;
   imageUrls: string[];
   selectedSkills?: SkillInfo[];
-  command?: "new" | "resume" | "exit" | "goal";
+  command?: "new" | "resume" | "exit" | "goal" | "compact" | "diff" | "copy" | "clear" | "backtrack";
 };
 
 type Props = {
@@ -100,6 +100,7 @@ export function PromptInput({
   const [selectedSkills, setSelectedSkills] = useState<SkillInfo[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [pendingExit, setPendingExit] = useState(false);
+  const [pendingBacktrack, setPendingBacktrack] = useState(false);
   const [menuIndex, setMenuIndex] = useState(0);
   const [showSkillsDropdown, setShowSkillsDropdown] = useState(false);
   const [skillsDropdownIndex, setSkillsDropdownIndex] = useState(0);
@@ -192,8 +193,26 @@ export function PromptInput({
       if (busy) {
         onInterrupt();
         setStatusMessage("Interrupting…");
+        return;
       }
+      if (!isEmpty(buffer)) {
+        setBuffer(EMPTY_BUFFER);
+        setPendingBacktrack(false);
+        return;
+      }
+      // Empty buffer – backtrack priming (like Codex)
+      if (pendingBacktrack) {
+        setPendingBacktrack(false);
+        onSubmit({ text: "", imageUrls: [], command: "backtrack" });
+        return;
+      }
+      setPendingBacktrack(true);
+      setStatusMessage("Press esc again to undo the last exchange, or any key to cancel");
       return;
+    }
+
+    if (pendingBacktrack) {
+      setPendingBacktrack(false);
     }
 
     if (key.ctrl && (input === "d" || input === "D")) {
@@ -510,6 +529,26 @@ export function PromptInput({
     if (item.kind === "goal") {
       clearSlashToken();
       setBuffer((state) => insertText(state, "/goal "));
+      return;
+    }
+    if (item.kind === "compact") {
+      onSubmit({ text: "", imageUrls: [], command: "compact" });
+      setBuffer(EMPTY_BUFFER);
+      return;
+    }
+    if (item.kind === "diff") {
+      onSubmit({ text: "", imageUrls: [], command: "diff" });
+      setBuffer(EMPTY_BUFFER);
+      return;
+    }
+    if (item.kind === "copy") {
+      onSubmit({ text: "", imageUrls: [], command: "copy" });
+      setBuffer(EMPTY_BUFFER);
+      return;
+    }
+    if (item.kind === "clear") {
+      onSubmit({ text: "", imageUrls: [], command: "clear" });
+      setBuffer(EMPTY_BUFFER);
       return;
     }
   }

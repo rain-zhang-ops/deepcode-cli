@@ -4,6 +4,7 @@ import chalk from "chalk";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { execSync } from "child_process";
 import OpenAI from "openai";
 import {
   SessionManager,
@@ -28,6 +29,7 @@ import {
   type AskUserQuestionAnswers
 } from "./askUserQuestion";
 import { buildExitSummaryText } from "./exitSummary";
+import { writeClipboardText } from "./clipboard";
 
 const DEFAULT_MODEL = "deepseek-v4-pro";
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
@@ -165,6 +167,84 @@ export function App({ projectRoot, version = "", onRestart }: AppProps): React.R
         setView("session-list");
         return;
       }
+      if (submission.command === "clear") {
+        write("\u001B[2J\u001B[3J\u001B[H");
+        return;
+      }
+      if (submission.command === "copy") {
+        const lastAssistant = [...messagesRef.current]
+          .reverse()
+          .find((m) => m.role === "assistant" && typeof m.content === "string" && m.content.trim());
+        if (lastAssistant && typeof lastAssistant.content === "string") {
+          const ok = writeClipboardText(lastAssistant.content);
+          setMessages((prev) => [
+            ...prev,
+            buildSyntheticAssistantMessage(ok ? "Copied to clipboard." : "Could not write to clipboard (is xclip / pbcopy installed?).")
+          ]);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            buildSyntheticAssistantMessage("No assistant response to copy yet.")
+          ]);
+        }
+        return;
+      }
+      if (submission.command === "diff") {
+        let diffOutput: string;
+        try {
+          diffOutput = execSync("git diff", { cwd: projectRoot, encoding: "utf8" });
+          if (!diffOutput.trim()) {
+            diffOutput = "(no uncommitted changes)";
+          }
+        } catch {
+          diffOutput = "(not a git repository or git is not available)";
+        }
+        setMessages((prev) => [
+          ...prev,
+          buildSyntheticAssistantMessage(`\`\`\`diff\n${diffOutput}\n\`\`\``)
+        ]);
+        return;
+      }
+      if (submission.command === "compact") {
+        const activeSessionId = sessionManager.getActiveSessionId();
+        if (!activeSessionId) {
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage("No active session to compact.")]);
+          return;
+        }
+        const compactMsg = buildSyntheticAssistantMessage("Compacting conversation…");
+        setMessages((prev) => [...prev, compactMsg]);
+        setBusy(true);
+        setErrorLine(null);
+        try {
+          await sessionManager.compactSession(activeSessionId);
+          setMessages((prev) => [
+            ...prev.filter((m) => m.id !== compactMsg.id),
+            buildSyntheticAssistantMessage("Conversation compacted.")
+          ]);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setMessages((prev) => [
+            ...prev.filter((m) => m.id !== compactMsg.id),
+            buildSyntheticAssistantMessage(`Compaction failed: ${message}`)
+          ]);
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
+      if (submission.command === "backtrack") {
+        const activeSessionId = sessionManager.getActiveSessionId();
+        if (activeSessionId) {
+          sessionManager.rollbackLastExchange(activeSessionId);
+          const updated = sessionManager.listSessionMessages(activeSessionId).filter((m) => m.visible);
+          setMessages(updated);
+          setStatusLine("");
+        } else {
+          // If no session just clear the visible message list
+          setMessages([]);
+        }
+        return;
+      }
 
       const goalText = submission.command === "goal" ? (submission.text ?? "").trim() : "";
       const promptText = goalText
@@ -212,7 +292,7 @@ export function App({ projectRoot, version = "", onRestart }: AppProps): React.R
         setRunningProcesses(null);
       }
     },
-    [exit, onRestart, sessionManager, write]
+    [exit, onRestart, projectRoot, sessionManager, write]
   );
 
   const handleInterrupt = useCallback(() => {
@@ -374,6 +454,22 @@ function buildSyntheticUserMessage(content: string, imageCount: number): Session
             image_url: { url: "" }
           }))
         : null,
+    messageParams: null,
+    compacted: false,
+    visible: true,
+    createTime: now,
+    updateTime: now
+  };
+}
+
+function buildSyntheticAssistantMessage(content: string): SessionMessage {
+  const now = new Date().toISOString();
+  return {
+    id: `local-${Math.random().toString(36).slice(2)}`,
+    sessionId: "local",
+    role: "assistant",
+    content,
+    contentParams: null,
     messageParams: null,
     compacted: false,
     visible: true,

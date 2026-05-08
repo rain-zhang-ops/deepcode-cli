@@ -109,6 +109,61 @@ function readMacClipboardImage(): ClipboardImage | null {
   }
 }
 
+/**
+ * Write text content to the system clipboard.
+ * Returns true if the write succeeded, false otherwise.
+ */
+export function writeClipboardText(text: string): boolean {
+  if (process.platform === "darwin") {
+    const result = tryRunStatus("pbcopy", []);
+    // pbcopy reads from stdin; use spawnSync with input option
+    try {
+      const { spawnSync } = require("child_process") as typeof import("child_process");
+      const r = spawnSync("pbcopy", [], { input: text, encoding: "utf8" });
+      return r.status === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  if (process.platform === "linux") {
+    try {
+      const { spawnSync } = require("child_process") as typeof import("child_process");
+      // Try xclip first
+      let r = spawnSync("xclip", ["-selection", "clipboard"], { input: text, encoding: "utf8" });
+      if (r.status === 0) {
+        return true;
+      }
+      // Fall back to xsel
+      r = spawnSync("xsel", ["--clipboard", "--input"], { input: text, encoding: "utf8" });
+      if (r.status === 0) {
+        return true;
+      }
+      // Fall back to wl-copy (Wayland)
+      r = spawnSync("wl-copy", [], { input: text, encoding: "utf8" });
+      return r.status === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  if (process.platform === "win32") {
+    try {
+      const { spawnSync } = require("child_process") as typeof import("child_process");
+      const r = spawnSync(
+        "powershell",
+        ["-NoProfile", "-Command", "Set-Clipboard -Value $input"],
+        { input: text, encoding: "utf8" }
+      );
+      return r.status === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 export function readClipboardImage(): ClipboardImage | null {
   if (process.platform === "darwin") {
     return readMacClipboardImage();

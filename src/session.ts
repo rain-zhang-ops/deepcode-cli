@@ -740,6 +740,40 @@ The candidate skills are as follows:\n\n`;
     this.activeSessionId = sessionId;
   }
 
+  /**
+   * Remove the last user message and the assistant reply that followed it from
+   * the session (Esc-backtrack feature, analogous to Codex backtracking).
+   * Only visible, non-compacted messages are considered.
+   */
+  rollbackLastExchange(sessionId: string): void {
+    const messages = this.listSessionMessages(sessionId);
+    // Find the last visible user message index
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === "user" && messages[i].visible && !messages[i].compacted) {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx === -1) {
+      return;
+    }
+    // Remove all messages from lastUserIdx onward that are visible and not system
+    const kept = messages.filter(
+      (m, idx) => idx < lastUserIdx || m.role === "system"
+    );
+    this.saveSessionMessages(sessionId, kept);
+    // Reset session status
+    this.updateSessionEntry(sessionId, (entry) => ({
+      ...entry,
+      status: "completed",
+      assistantReply: null,
+      assistantThinking: null,
+      toolCalls: null,
+      updateTime: new Date().toISOString()
+    }));
+  }
+
   async handleUserPrompt(userPrompt: UserPromptContent): Promise<void> {
     const controller = new AbortController();
     this.activePromptController = controller;
