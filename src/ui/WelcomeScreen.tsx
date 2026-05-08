@@ -26,10 +26,13 @@ const SHORTCUT_TIPS = [
   { label: "Enter", description: "Send the prompt" },
   { label: "Shift+Enter", description: "Insert a newline" },
   { label: "Ctrl+V", description: "Paste an image from the clipboard" },
-  { label: "rg + jq", description: "Install these tools to boost Bash exploration signal and information density" },
   { label: "Esc", description: "Interrupt the current model turn" },
   { label: "/", description: "Open the skills and commands menu" },
   { label: "Ctrl+D twice", description: "Quit Deep Code CLI" }
+];
+
+const RECOMMENDED_TIPS = [
+  { label: "rg + jq", description: "Install rg and jq to boost Bash exploration signal and information density" }
 ];
 
 export function WelcomeScreen({
@@ -137,7 +140,8 @@ export function buildWelcomeTips(skills: SkillInfo[]): Array<{ label: string; de
 
   return [
     ...slashTips,
-    ...SHORTCUT_TIPS.filter((tip) => !BUILTIN_SLASH_COMMANDS.some((command) => command.label === tip.label))
+    ...SHORTCUT_TIPS.filter((tip) => !BUILTIN_SLASH_COMMANDS.some((command) => command.label === tip.label)),
+    ...RECOMMENDED_TIPS
   ];
 }
 

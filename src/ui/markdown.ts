@@ -39,7 +39,7 @@ function splitByFences(text: string): FenceSegment[] {
 
   for (const line of lines) {
     if (!inFence) {
-      const fenceStartMatch = /^\s*```([^`\s]*)?.*$/.exec(line);
+      const fenceStartMatch = /^\s*```([^\s`]+)?.*$/.exec(line);
       if (!fenceStartMatch) {
         buffer.push(line);
         continue;

@@ -35,7 +35,7 @@ export type PromptSubmission = {
   text: string;
   imageUrls: string[];
   selectedSkills?: SkillInfo[];
-  command?: "new" | "resume" | "exit";
+  command?: "new" | "resume" | "exit" | "goal";
 };
 
 type Props = {
@@ -507,6 +507,11 @@ export function PromptInput({
       setBuffer(EMPTY_BUFFER);
       return;
     }
+    if (item.kind === "goal") {
+      clearSlashToken();
+      setBuffer((state) => insertText(state, "/goal "));
+      return;
+    }
   }
 
   function submitCurrentBuffer(): void {
@@ -523,6 +528,24 @@ export function PromptInput({
     if (trimmed.startsWith("/")) {
       const exactMatch = findExactSlashCommand(slashItems, trimmed.split(/\s+/, 1)[0]);
       if (exactMatch) {
+        if (exactMatch.kind === "goal") {
+          const goalText = trimmed.replace(/^\/goal\b/i, "").trim();
+          if (!goalText) {
+            setStatusMessage("usage: /goal <your objective>");
+            return;
+          }
+          onSubmit({
+            text: goalText,
+            imageUrls,
+            selectedSkills,
+            command: "goal"
+          });
+          setBuffer(EMPTY_BUFFER);
+          setImageUrls([]);
+          setSelectedSkills([]);
+          setShowSkillsDropdown(false);
+          return;
+        }
         handleSlashSelection(exactMatch);
         return;
       }

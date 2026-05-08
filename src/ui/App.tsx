@@ -31,6 +31,10 @@ import { buildExitSummaryText } from "./exitSummary";
 
 const DEFAULT_MODEL = "deepseek-v4-pro";
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
+const GOAL_MODE_INSTRUCTIONS = [
+  "Operate in autonomous goal mode: keep taking concrete actions toward the goal.",
+  "If one turn ends before the goal is complete, continue proactively in subsequent turns until completion or user interruption."
+].join("\n");
 
 type View = "chat" | "session-list";
 
@@ -162,15 +166,24 @@ export function App({ projectRoot, version = "", onRestart }: AppProps): React.R
         return;
       }
 
+      const goalText = submission.command === "goal" ? (submission.text ?? "").trim() : "";
+      const promptText = goalText
+        ? [
+          `Goal: ${goalText}`,
+          "",
+          GOAL_MODE_INSTRUCTIONS
+        ].join("\n")
+        : submission.text;
+
       const prompt: UserPromptContent = {
-        text: submission.text,
+        text: promptText,
         imageUrls: submission.imageUrls,
         skills: submission.selectedSkills && submission.selectedSkills.length > 0
           ? submission.selectedSkills
           : undefined
       };
 
-      const trimmedText = (submission.text ?? "").trim();
+      const trimmedText = (goalText || submission.text || "").trim();
       const selectedSkillNames = submission.selectedSkills?.map((skill) => skill.name).filter(Boolean) ?? [];
       const userDisplayContent = trimmedText
         || (selectedSkillNames.length > 0 ? `Use skills: ${selectedSkillNames.join(", ")}` : "")

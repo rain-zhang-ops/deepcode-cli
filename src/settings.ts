@@ -37,6 +37,11 @@ function resolveReasoningEffort(value: unknown): ReasoningEffort {
   return value === "high" || value === "max" ? value : "max";
 }
 
+/**
+ * Resolve a positive integer config value.
+ * Returns undefined for non-numeric, non-finite, zero, or negative inputs.
+ * Floors valid numeric inputs to avoid fractional milliseconds/retry counts.
+ */
 function resolvePositiveInteger(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return undefined;
