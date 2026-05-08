@@ -371,8 +371,8 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
         await sessionManager.handleUserPrompt(prompt);
         // Only show duration for completed turns, not interrupted ones
         const activeSessionId = sessionManager.getActiveSessionId();
-        const finalStatus = activeSessionId ? sessionManager.getSession(activeSessionId)?.status : null;
-        if (finalStatus !== "interrupted") {
+        const finalSession = activeSessionId ? sessionManager.getSession(activeSessionId) : null;
+        if (finalSession?.status !== "interrupted") {
           const elapsed = Date.now() - turnStartRef.current;
           const elapsedStr = elapsed >= 60000
             ? `${Math.floor(elapsed / 60000)}m ${Math.round((elapsed % 60000) / 1000)}s`

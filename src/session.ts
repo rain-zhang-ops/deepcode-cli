@@ -797,16 +797,41 @@ The candidate skills are as follows:\n\n`;
     if (!client) {
       throw new Error("No API client configured.");
     }
-    // Build a compact picture of the project structure
-    let treeOutput = "";
-    try {
-      treeOutput = require("child_process").execSync(
-        "find . -maxdepth 3 -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' | head -80",
-        { cwd: projectRoot, encoding: "utf8" }
-      ) as string;
-    } catch {
-      treeOutput = "(could not list project files)";
+
+    // Build a compact picture of the project structure using pure Node.js (no shell injection risk)
+    const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".next", "build", "coverage", ".cache"]);
+    const filePaths: string[] = [];
+    function collectPaths(dir: string, depth: number): void {
+      if (depth > 3 || filePaths.length >= 80) {
+        return;
+      }
+      let entries: string[];
+      try {
+        entries = fs.readdirSync(dir);
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (filePaths.length >= 80) {
+          break;
+        }
+        if (SKIP_DIRS.has(entry)) {
+          continue;
+        }
+        const fullPath = path.join(dir, entry);
+        const rel = path.relative(projectRoot, fullPath);
+        filePaths.push(rel);
+        let isDir = false;
+        try {
+          isDir = fs.statSync(fullPath).isDirectory();
+        } catch { /* skip unreadable */ }
+        if (isDir) {
+          collectPaths(fullPath, depth + 1);
+        }
+      }
     }
+    collectPaths(projectRoot, 0);
+    const treeOutput = filePaths.length > 0 ? filePaths.join("\n") : "(could not list project files)";
 
     // Also read package.json if present
     let pkgJson = "";
@@ -817,22 +842,24 @@ The candidate skills are as follows:\n\n`;
       }
     } catch { /* ignore */ }
 
-    const prompt = `You are helping set up an AGENTS.md file for a software project. 
-An AGENTS.md is a concise Markdown document that provides AI coding assistants with key context about the project.
-
-Project files:
-\`\`\`
-${treeOutput.trim()}
-\`\`\`
-${pkgJson ? `\npackage.json (truncated):\n\`\`\`json\n${pkgJson}\n\`\`\`` : ""}
-
-Write a concise AGENTS.md that covers:
-1. Project overview (1-2 sentences)
-2. Build/test commands
-3. Key conventions or constraints
-4. Directory structure highlights
-
-Keep it under 300 words. Use Markdown headings. Output ONLY the Markdown content, no preamble.`;
+    const prompt = [
+      "You are helping set up an AGENTS.md file for a software project.",
+      "An AGENTS.md is a concise Markdown document that provides AI coding assistants with key context about the project.",
+      "",
+      "Project files:",
+      "```",
+      treeOutput.trim(),
+      "```",
+      pkgJson ? `\npackage.json (truncated):\n\`\`\`json\n${pkgJson}\n\`\`\`` : "",
+      "",
+      "Write a concise AGENTS.md that covers:",
+      "1. Project overview (1-2 sentences)",
+      "2. Build/test commands",
+      "3. Key conventions or constraints",
+      "4. Directory structure highlights",
+      "",
+      "Keep it under 300 words. Use Markdown headings. Output ONLY the Markdown content, no preamble."
+    ].filter((line) => line !== undefined).join("\n");
 
     const thinkingOptions = buildThinkingRequestOptions(thinkingEnabled, baseURL, reasoningEffort);
     const response = await this.createChatCompletionStream(client, {
