@@ -24,4 +24,5 @@ test("buildWelcomeTips includes built-in slash commands and loaded skills", () =
   assert.ok(labels.includes("/new"));
   assert.ok(labels.includes("/loaded"));
   assert.equal(labels.includes("/fresh"), false);
+  assert.ok(labels.includes("rg + jq"));
 });
