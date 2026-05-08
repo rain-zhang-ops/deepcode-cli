@@ -113,6 +113,8 @@ export function PromptInput({
   const slashItems = useMemo(() => buildSlashCommands(skills), [skills]);
   const slashToken = getCurrentSlashToken(buffer);
   const slashMenu = showSkillsDropdown ? [] : slashToken ? filterSlashCommands(slashItems, slashToken) : [];
+  const SLASH_MENU_VISIBLE_MAX = 10;
+  const slashMenuVisible = slashMenu.slice(0, SLASH_MENU_VISIBLE_MAX);
   const showMenu = slashMenu.length > 0;
   const promptHistoryKey = useMemo(() => promptHistory.join("\0"), [promptHistory]);
   const promptPrefix = busy ? `${SPINNER_FRAMES[spinnerIndex]} ` : "> ";
@@ -147,10 +149,10 @@ export function PromptInput({
       setMenuIndex(0);
       return;
     }
-    if (menuIndex >= slashMenu.length) {
-      setMenuIndex(slashMenu.length - 1);
+    if (menuIndex >= slashMenuVisible.length) {
+      setMenuIndex(slashMenuVisible.length - 1);
     }
-  }, [slashMenu, showMenu, menuIndex]);
+  }, [slashMenuVisible, showMenu, menuIndex]);
 
   useEffect(() => {
     if (skillsDropdownIndex >= skills.length) {
@@ -303,15 +305,15 @@ export function PromptInput({
 
     if (showMenu) {
       if (key.upArrow) {
-        setMenuIndex((idx) => (idx - 1 + slashMenu.length) % slashMenu.length);
+        setMenuIndex((idx) => (idx - 1 + slashMenuVisible.length) % slashMenuVisible.length);
         return;
       }
       if (key.downArrow) {
-        setMenuIndex((idx) => (idx + 1) % slashMenu.length);
+        setMenuIndex((idx) => (idx + 1) % slashMenuVisible.length);
         return;
       }
       if (key.tab || (key.return && !key.shift && !key.meta)) {
-        const selected = slashMenu[menuIndex];
+        const selected = slashMenuVisible[menuIndex];
         if (selected) {
           handleSlashSelection(selected);
           return;
@@ -688,15 +690,15 @@ export function PromptInput({
       ) : null}
       {showMenu ? (
         <Box flexDirection="column" marginBottom={1}>
-          {slashMenu.slice(0, 10).map((item, idx) => (
+          {slashMenuVisible.map((item, idx) => (
             <Text key={item.label} color={idx === menuIndex ? "cyanBright" : undefined} wrap="truncate-end">
               {idx === menuIndex ? "› " : "  "}
               <Text bold>{formatSlashCommandLabel(item)}</Text>
               <Text dimColor>  {formatSlashCommandDescription(item.description)}</Text>
             </Text>
           ))}
-          {slashMenu.length > 10 ? (
-            <Text dimColor>  … {slashMenu.length - 10} more</Text>
+          {slashMenu.length > SLASH_MENU_VISIBLE_MAX ? (
+            <Text dimColor>  … {slashMenu.length - SLASH_MENU_VISIBLE_MAX} more</Text>
           ) : null}
         </Box>
       ) : null}

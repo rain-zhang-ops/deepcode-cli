@@ -369,14 +369,19 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
       setRunningProcesses(null);
       try {
         await sessionManager.handleUserPrompt(prompt);
-        const elapsed = Date.now() - turnStartRef.current;
-        const elapsedStr = elapsed >= 60000
-          ? `${Math.floor(elapsed / 60000)}m ${Math.round((elapsed % 60000) / 1000)}s`
-          : `${(elapsed / 1000).toFixed(1)}s`;
-        setMessages((prev) => [
-          ...prev,
-          buildSyntheticAssistantMessage(`_Done in ${elapsedStr}_`)
-        ]);
+        // Only show duration for completed turns, not interrupted ones
+        const activeSessionId = sessionManager.getActiveSessionId();
+        const finalStatus = activeSessionId ? sessionManager.getSession(activeSessionId)?.status : null;
+        if (finalStatus !== "interrupted") {
+          const elapsed = Date.now() - turnStartRef.current;
+          const elapsedStr = elapsed >= 60000
+            ? `${Math.floor(elapsed / 60000)}m ${Math.round((elapsed % 60000) / 1000)}s`
+            : `${(elapsed / 1000).toFixed(1)}s`;
+          setMessages((prev) => [
+            ...prev,
+            buildSyntheticAssistantMessage(`_Done in ${elapsedStr}_`)
+          ]);
+        }
         await refreshSkills();
         refreshSessionsList();
       } catch (error) {

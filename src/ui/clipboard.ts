@@ -115,8 +115,7 @@ function readMacClipboardImage(): ClipboardImage | null {
  */
 export function writeClipboardText(text: string): boolean {
   if (process.platform === "darwin") {
-    const result = tryRunStatus("pbcopy", []);
-    // pbcopy reads from stdin; use spawnSync with input option
+    // pbcopy reads from stdin; pass text via the input option
     try {
       const { spawnSync } = require("child_process") as typeof import("child_process");
       const r = spawnSync("pbcopy", [], { input: text, encoding: "utf8" });
