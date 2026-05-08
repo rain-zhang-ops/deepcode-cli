@@ -23,6 +23,12 @@ test("renderMarkdown preserves code fences with language tag", () => {
   assert.equal(result.includes("console.log(1);"), true);
 });
 
+test("renderMarkdown parses fenced code blocks with extra fence attributes", () => {
+  const result = stripAnsi(renderMarkdown("```typescript title=\"x\"\nconst x = 1;\n```"));
+  assert.equal(result.includes("[typescript]"), true);
+  assert.equal(result.includes("const x = 1;"), true);
+});
+
 test("renderMarkdown styles inline code without removing it", () => {
   const result = stripAnsi(renderMarkdown("Use `npm install` first."));
   assert.equal(result.includes("npm install"), true);

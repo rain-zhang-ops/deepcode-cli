@@ -408,6 +408,8 @@ export function createOpenAIClient(): {
   thinkingEnabled: boolean;
   reasoningEffort: "high" | "max";
   debugLogEnabled: boolean;
+  timeout?: number;
+  maxRetries?: number;
   notify?: string;
   webSearchTool?: string;
   machineId?: string;
@@ -421,6 +423,8 @@ export function createOpenAIClient(): {
       thinkingEnabled: settings.thinkingEnabled,
       reasoningEffort: settings.reasoningEffort,
       debugLogEnabled: settings.debugLogEnabled,
+      timeout: settings.timeout,
+      maxRetries: settings.maxRetries,
       notify: settings.notify,
       webSearchTool: settings.webSearchTool,
       machineId: getMachineId()
@@ -429,7 +433,9 @@ export function createOpenAIClient(): {
 
   const client = new OpenAI({
     apiKey: settings.apiKey,
-    baseURL: settings.baseURL || undefined
+    baseURL: settings.baseURL || undefined,
+    timeout: settings.timeout,
+    maxRetries: settings.maxRetries
   });
   return {
     client,
@@ -438,6 +444,8 @@ export function createOpenAIClient(): {
     thinkingEnabled: settings.thinkingEnabled,
     reasoningEffort: settings.reasoningEffort,
     debugLogEnabled: settings.debugLogEnabled,
+    timeout: settings.timeout,
+    maxRetries: settings.maxRetries,
     notify: settings.notify,
     webSearchTool: settings.webSearchTool,
     machineId: getMachineId()

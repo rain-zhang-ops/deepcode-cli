@@ -603,14 +603,13 @@ export function PromptInput({
       ) : null}
       {showMenu ? (
         <Box flexDirection="column" marginBottom={1}>
-          {slashMenu.slice(0, 8).map((item, idx) => (
+          {slashMenu.map((item, idx) => (
             <Text key={item.label} color={idx === menuIndex ? "cyanBright" : undefined} wrap="truncate-end">
               {idx === menuIndex ? "› " : "  "}
               <Text bold>{formatSlashCommandLabel(item)}</Text>
               <Text dimColor>  {formatSlashCommandDescription(item.description)}</Text>
             </Text>
           ))}
-          {slashMenu.length > 8 ? <Text dimColor>… {slashMenu.length - 8} more</Text> : null}
         </Box>
       ) : null}
       <Text dimColor>{divider}</Text>

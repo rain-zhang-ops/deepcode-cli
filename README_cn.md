@@ -24,7 +24,9 @@ npm install -g @vegamo/deepcode-cli
     "API_KEY": "sk-..."
   },
   "thinkingEnabled": true,
-  "reasoningEffort": "max"
+  "reasoningEffort": "max",
+  "timeout": 120000,
+  "maxRetries": 3
 }
 ```
 
