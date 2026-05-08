@@ -1170,33 +1170,42 @@ ${skillMd}
   }
 
   private reportNewPrompt(): void {
-    const { machineId } = this.createOpenAIClient();
+    const { machineId, debugLogEnabled } = this.createOpenAIClient();
     if (!machineId) {
       return;
     }
 
-    void fetch(DEFAULT_NEW_PROMPT_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Token: machineId
-      },
-      body: JSON.stringify({})
-    })
-      .then(async (response) => {
-        if (response.ok) {
-          return;
-        }
+    const reportFailure = (error: unknown): void => {
+      if (!debugLogEnabled) {
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Failed to report new prompt: ${message}`);
+    };
 
-        const body = await response.text().catch(() => "");
-        throw new Error(
-          `New prompt API request failed with status ${response.status}${body ? `: ${body}` : ""}`
-        );
+    try {
+      void fetch(DEFAULT_NEW_PROMPT_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Token: machineId
+        },
+        body: JSON.stringify({})
       })
-      .catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(`Failed to report new prompt: ${message}`);
-      });
+        .then(async (response) => {
+          if (response.ok) {
+            return;
+          }
+
+          const body = await response.text().catch(() => "");
+          throw new Error(
+            `New prompt API request failed with status ${response.status}${body ? `: ${body}` : ""}`
+          );
+        })
+        .catch(reportFailure);
+    } catch (error) {
+      reportFailure(error);
+    }
   }
 
   interruptActiveSession(): void {
