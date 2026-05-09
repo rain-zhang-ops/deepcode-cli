@@ -1563,26 +1563,58 @@ ${skillMd}
   }
 
   private loadAgentInstructions(): string | null {
-    const candidatePaths = [
-      path.join(this.projectRoot, "AGENTS.md"),
-      path.join(os.homedir(), ".deepcode", "AGENTS.md")
-    ];
+    const sections: string[] = [];
 
-    for (const candidatePath of candidatePaths) {
-      try {
-        if (!fs.existsSync(candidatePath)) {
-          continue;
+    // Load global rules from ~/.agents/rules/*.md (sorted for determinism)
+    const globalRulesDir = path.join(os.homedir(), ".agents", "rules");
+    try {
+      if (fs.existsSync(globalRulesDir)) {
+        const entries = fs.readdirSync(globalRulesDir).sort();
+        for (const entry of entries) {
+          if (!entry.endsWith(".md")) {
+            continue;
+          }
+          try {
+            const content = fs.readFileSync(path.join(globalRulesDir, entry), "utf8").trim();
+            if (content) {
+              sections.push(content);
+            }
+          } catch {
+            // skip unreadable files
+          }
         }
-        const content = fs.readFileSync(candidatePath, "utf8").trim();
-        if (content) {
-          return content;
-        }
-      } catch {
-        continue;
       }
+    } catch {
+      // skip if rules dir is unreadable
     }
 
-    return null;
+    // Load user-level instructions (~/.deepcode/AGENTS.md)
+    const userAgentsPath = path.join(os.homedir(), ".deepcode", "AGENTS.md");
+    try {
+      if (fs.existsSync(userAgentsPath)) {
+        const content = fs.readFileSync(userAgentsPath, "utf8").trim();
+        if (content) {
+          sections.push(content);
+        }
+      }
+    } catch {
+      // skip if unreadable
+    }
+
+    // Load project-level instructions (./AGENTS.md)
+    const projectAgentsPath = path.join(this.projectRoot, "AGENTS.md");
+    try {
+      if (fs.existsSync(projectAgentsPath)) {
+        const content = fs.readFileSync(projectAgentsPath, "utf8").trim();
+        if (content) {
+          sections.push(content);
+        }
+      }
+    } catch {
+      // skip if unreadable
+    }
+
+    return sections.length > 0 ? sections.join("\n\n") : null;
   }
 
   private buildSystemMessage(

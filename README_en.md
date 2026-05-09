@@ -40,6 +40,12 @@ Deep Code CLI supports agent skills that allow you to extend the assistant's cap
 - **User-level Skills**: discovered and activated from `~/.agents/skills/`.
 - **Project-level Skills**: loaded from `./.deepcode/skills/` for project-specific workflows.
 
+### **Global Rules**
+Load cross-project rules from `~/.agents/rules/`:
+
+- Place any `.md` files in `~/.agents/rules/` to apply rules across all your projects.
+- Global rules are combined with project-level `AGENTS.md` and user-level `~/.deepcode/AGENTS.md` — configure once, use everywhere.
+
 ### **Optimized for DeepSeek**
 - Specifically tuned for DeepSeek model performance.
 - Reduce costs by using [Context Caching](https://api-docs.deepseek.com/guides/kv_cache).
@@ -47,18 +53,20 @@ Deep Code CLI supports agent skills that allow you to extend the assistant's cap
 
 ## Keyboard Shortcuts
 
-| Key             | Action                                       |
-|-----------------|----------------------------------------------|
-| `Enter`         | Send the prompt                              |
-| `Shift+Enter`   | Insert a newline (also `Ctrl+J`)             |
-| `Ctrl+V`        | Paste an image from the clipboard            |
-| `Esc`           | Interrupt the current model turn             |
-| `/`             | Open the skills / commands menu              |
-| `/new`          | Start a fresh conversation                   |
-| `/resume`       | Choose a previous conversation to continue   |
-| `/skills`       | List available skills                        |
-| `/exit`         | Quit Deep Code                               |
-| `Ctrl+D` twice  | Quit Deep Code                               |
+| Key             | Action                                              |
+|-----------------|-----------------------------------------------------|
+| `Enter`         | Send the prompt                                     |
+| `Shift+Enter`   | Insert a newline (also `Ctrl+J`)                    |
+| `Ctrl+V`        | Paste an image from the clipboard                   |
+| `Esc`           | Interrupt the current model turn                    |
+| `Alt+.`         | Increase thinking effort (disabled → high → max)    |
+| `Alt+,`         | Decrease thinking effort (max → high → disabled)    |
+| `/`             | Open the skills / commands menu                     |
+| `/new`          | Start a fresh conversation                          |
+| `/resume`       | Choose a previous conversation to continue          |
+| `/skills`       | List available skills                               |
+| `/exit`         | Quit Deep Code                                      |
+| `Ctrl+D` twice  | Quit Deep Code                                      |
 
 ## Supported Models
 

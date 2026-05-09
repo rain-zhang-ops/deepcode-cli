@@ -356,6 +356,28 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
         return;
       }
 
+      if (submission.command === "thinking-up" || submission.command === "thinking-down") {
+        const current = getSettingsService().getResolvedSettings();
+        // Three states: disabled → high → max (cycling with wrap-around)
+        type ThinkingLevel = "disabled" | "high" | "max";
+        const LEVELS: ThinkingLevel[] = ["disabled", "high", "max"];
+        const currentLevel: ThinkingLevel = !current.thinkingEnabled
+          ? "disabled"
+          : current.reasoningEffort === "high" ? "high" : "max";
+        const currentIndex = LEVELS.indexOf(currentLevel);
+        const delta = submission.command === "thinking-up" ? 1 : -1;
+        const nextIndex = (currentIndex + delta + LEVELS.length) % LEVELS.length;
+        const nextLevel = LEVELS[nextIndex];
+        if (nextLevel === "disabled") {
+          getSettingsService().updateSettings((s) => ({ ...s, thinkingEnabled: false }));
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_thinking_off"))]);
+        } else {
+          getSettingsService().updateSettings((s) => ({ ...s, thinkingEnabled: true, reasoningEffort: nextLevel }));
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_thinking_effort", nextLevel))]);
+        }
+        return;
+      }
+
       if (submission.command === "effort") {
         const effortVal = (submission.text ?? "").trim().toLowerCase();
         if (!effortVal) {

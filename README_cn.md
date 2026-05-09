@@ -40,6 +40,12 @@ Deep Code CLI 支持 agent skills，允许您扩展助手的能力：
 - **User-level Skills**：从 `~/.agents/skills/` 目录中发现并激活 skills。
 - **Project-level Skills**：从 `./.deepcode/skills/` 目录中加载项目专属 skills。
 
+### **全局规则（Global Rules）**
+支持从 `~/.agents/rules/` 目录加载跨项目通用规则：
+
+- 在 `~/.agents/rules/` 目录中放置任意 `.md` 文件，即可作为全局规则应用于所有项目。
+- 全局规则会与项目级 `AGENTS.md` 和用户级 `~/.deepcode/AGENTS.md` 共同加载，无需重复配置。
+
 ### **为 DeepSeek 优化**
 - 专门为 DeepSeek 模型性能调优。
 - 通过使用[上下文缓存](https://api-docs.deepseek.com/guides/kv_cache)来降低成本。
@@ -53,6 +59,8 @@ Deep Code CLI 支持 agent skills，允许您扩展助手的能力：
 | `Shift+Enter`   | 插入换行（也可用 `Ctrl+J`）       |
 | `Ctrl+V`        | 从剪贴板粘贴图片                  |
 | `Esc`           | 中断当前模型回复                  |
+| `Alt+.`         | 提升思考强度（关闭 → high → max） |
+| `Alt+,`         | 降低思考强度（max → high → 关闭） |
 | `/`             | 打开 skills / 命令菜单            |
 | `/new`          | 开始新对话                        |
 | `/resume`       | 选择历史对话继续                  |

@@ -35,7 +35,7 @@ export type PromptSubmission = {
   text: string;
   imageUrls: string[];
   selectedSkills?: SkillInfo[];
-  command?: "new" | "resume" | "exit" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "save-memory" | "backtrack" | "model" | "thinking" | "effort" | "cwd" | "skill-new" | "mcp-add" | "key" | "settings";
+  command?: "new" | "resume" | "exit" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "save-memory" | "backtrack" | "model" | "thinking" | "effort" | "thinking-down" | "thinking-up" | "cwd" | "skill-new" | "mcp-add" | "key" | "settings";
 };
 
 type Props = {
@@ -297,6 +297,11 @@ export function PromptInput({
       } else {
         setStatusMessage("No attached images to clear");
       }
+      return;
+    }
+
+    if (key.meta && (input === "," || input === ".")) {
+      onSubmit({ text: input, imageUrls: [], command: input === "," ? "thinking-down" : "thinking-up" });
       return;
     }
 
