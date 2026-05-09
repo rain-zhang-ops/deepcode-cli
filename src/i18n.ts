@@ -165,7 +165,7 @@ const translations = {
     app_settings_tool_ready: "ready",
     app_settings_tool_missing: "missing",
     app_settings_summary:
-      "**Current Settings**\n- API key: **{0}**\n- Model: **{1}**\n- Thinking: **{2}**\n- Reasoning effort: **{3}**\n- Working directory: `{4}`\n- Local tools: {5}",
+      "**Current Settings**\n- API key: **{0}**\n- Model: **{1}**\n- Base URL: `{2}`\n- Thinking: **{3}**\n- Reasoning effort: **{4}**\n- Working directory: `{5}`\n- Local tools: {6}",
     // ui/exitSummary.ts
     exit_goodbye: "Goodbye!",
     exit_model_usage: "Model Usage",
@@ -181,6 +181,10 @@ const translations = {
     session_api_key_missing: "API key not configured",
     session_empty_content: "Model returned empty content.",
     session_tool_incomplete: "Previous tool call did not complete.",
+    session_connection_error_hint:
+      "Connection error. Check network/proxy/TLS settings for {0}.",
+    session_tls_error_hint:
+      "TLS certificate validation failed when connecting to {0}. If your network uses HTTPS interception, configure `NODE_EXTRA_CA_CERTS` to your org root certificate and restart. Temporary workaround (unsafe): `NODE_TLS_REJECT_UNAUTHORIZED=0`.",
     session_interrupted: "Interrupted.",
     session_killed_processes: "Killed processes: {0}.",
     session_kill_failed: "Failed to kill processes: {0}.",
@@ -328,7 +332,7 @@ const translations = {
     slash_cwd: "\u5207\u6362\u5de5\u4f5c\u76ee\u5f55\uff08\u7528\u6cd5\uff1a/cwd <\u8def\u5f84>\uff09",
     slash_skill: "\u521b\u5efa\u9879\u76ee\u6280\u80fd\uff08\u7528\u6cd5\uff1a/skill <\u540d\u79f0>\uff09",
     slash_mcp: "\u6dfb\u52a0 MCP \u670d\u52a1\u5668\u914d\u7f6e\uff08\u7528\u6cd5\uff1a/mcp <\u540d\u79f0> <\u547d\u4ee4> [\u53c2\u6570...]\uff09",
-    slash_key: "\u66f4\u65b0 API \u5bc6\u9451\uff08\u7528\u6cd5\uff1a/key <api_key>\uff09",
+    slash_key: "\u66f4\u65b0 API \u5bc6\u94a5\uff08\u7528\u6cd5\uff1a/key <api_key>\uff09",
     slash_settings: "\u663e\u793a key\u3001\u6a21\u578b\u3001\u601d\u8003\u3001\u63a8\u7406\u3001CWD \u548c\u5de5\u5177\u72b6\u6001",
     // app settings command feedback
     app_model_current: "\u5f53\u524d\u6a21\u578b\uff1a**{0}**\n\u7528\u6cd5\uff1a`/model <\u540d\u79f0>`",
@@ -349,8 +353,8 @@ const translations = {
     app_mcp_added: "MCP \u670d\u52a1\u5668 **{0}** \u5df2\u6dfb\u52a0\u5230\u8bbe\u7f6e\u3002\n\u4f7f\u7528 `/new` \u91cd\u65b0\u52a0\u8f7d\u4ee5\u6fc0\u6d3b\u3002",
     app_mcp_failed: "\u6dfb\u52a0 MCP \u670d\u52a1\u5668\u5931\u8d25\uff1a{0}",
     app_key_usage: "\u7528\u6cd5\uff1a`/key <api_key>`",
-    app_key_updated: "API \u5bc6\u9451\u5df2\u6210\u529f\u66f4\u65b0\u3002",
-    app_key_failed: "\u66f4\u65b0 API \u5bc6\u9451\u5931\u8d25\uff1a{0}",
+    app_key_updated: "API \u5bc6\u94a5\u5df2\u6210\u529f\u66f4\u65b0\u3002",
+    app_key_failed: "\u66f4\u65b0 API \u5bc6\u94a5\u5931\u8d25\uff1a{0}",
     app_settings_key_set: "\u5df2\u914d\u7f6e",
     app_settings_key_unset: "\u672a\u914d\u7f6e",
     app_settings_enabled: "\u5df2\u5f00\u542f",
@@ -358,7 +362,7 @@ const translations = {
     app_settings_tool_ready: "\u5df2\u5c31\u7eea",
     app_settings_tool_missing: "\u7f3a\u5931",
     app_settings_summary:
-      "**\u5f53\u524d\u8bbe\u7f6e**\n- API key\uff1a**{0}**\n- \u6a21\u578b\uff1a**{1}**\n- \u601d\u8003\uff1a**{2}**\n- \u63a8\u7406\u5f3a\u5ea6\uff1a**{3}**\n- \u5de5\u4f5c\u76ee\u5f55\uff1a`{4}`\n- \u672c\u5730\u5de5\u5177\uff1a{5}",
+      "**\u5f53\u524d\u8bbe\u7f6e**\n- API key\uff1a**{0}**\n- \u6a21\u578b\uff1a**{1}**\n- Base URL\uff1a`{2}`\n- \u601d\u8003\uff1a**{3}**\n- \u63a8\u7406\u5f3a\u5ea6\uff1a**{4}**\n- \u5de5\u4f5c\u76ee\u5f55\uff1a`{5}`\n- \u672c\u5730\u5de5\u5177\uff1a{6}",
     // ui/exitSummary.ts
     exit_goodbye: "\u518d\u89c1\uff01",
     exit_model_usage: "\u6a21\u578b\u7528\u91cf",
@@ -374,6 +378,10 @@ const translations = {
     session_api_key_missing: "\u672a\u914d\u7f6e API \u5bc6\u9470",
     session_empty_content: "\u6a21\u578b\u8fd4\u56de\u4e86\u7a7a\u5185\u5bb9\u3002",
     session_tool_incomplete: "\u4e0a\u4e00\u6b21\u5de5\u5177\u8c03\u7528\u672a\u5b8c\u6210\u3002",
+    session_connection_error_hint:
+      "\u8fde\u63a5\u5931\u8d25\u3002\u8bf7\u68c0\u67e5 {0} \u7684\u7f51\u7edc/\u4ee3\u7406/TLS \u8bbe\u7f6e\u3002",
+    session_tls_error_hint:
+      "\u8fde\u63a5 {0} \u65f6 TLS \u8bc1\u4e66\u6821\u9a8c\u5931\u8d25\u3002\u82e5\u6240\u5728\u7f51\u7edc\u4f7f\u7528 HTTPS \u68c0\u67e5\u4ee3\u7406\uff0c\u8bf7\u914d\u7f6e `NODE_EXTRA_CA_CERTS` \u6307\u5411\u7ec4\u7ec7\u6839\u8bc1\u4e66\u540e\u91cd\u542f\u3002\u4e34\u65f6\u89e3\u6cd5\uff08\u4e0d\u5b89\u5168\uff09\uff1a`NODE_TLS_REJECT_UNAUTHORIZED=0`\u3002",
     session_interrupted: "\u5df2\u4e2d\u65ad\u3002",
     session_killed_processes: "\u5df2\u7ec8\u6b62\u8fdb\u7a0b\uff1a{0}\u3002",
     session_kill_failed: "\u7ec8\u6b62\u8fdb\u7a0b\u5931\u8d25\uff1a{0}\u3002",

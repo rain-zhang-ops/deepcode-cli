@@ -24,6 +24,61 @@ type ChatCompletionDebugOptions = {
   params?: Record<string, unknown>;
 };
 
+function collectErrorMessages(error: unknown): string[] {
+  const messages: string[] = [];
+  const visited = new Set<unknown>();
+  let current: unknown = error;
+
+  for (let depth = 0; depth < 8 && current && !visited.has(current); depth += 1) {
+    visited.add(current);
+    if (current instanceof Error) {
+      if (current.message) {
+        messages.push(current.message);
+      }
+      current = (current as { cause?: unknown }).cause;
+      continue;
+    }
+    if (typeof current === "string") {
+      messages.push(current);
+      break;
+    }
+    if (typeof current === "object") {
+      const maybeMessage = (current as { message?: unknown }).message;
+      if (typeof maybeMessage === "string" && maybeMessage) {
+        messages.push(maybeMessage);
+      }
+      current = (current as { cause?: unknown }).cause;
+      continue;
+    }
+    messages.push(String(current));
+    break;
+  }
+
+  return messages;
+}
+
+function toUserFacingRequestError(error: unknown, baseURL?: string): string {
+  const resolvedBaseURL = baseURL || "(unknown base URL)";
+  const messages = collectErrorMessages(error);
+  const message = messages[0] || (error instanceof Error ? error.message : String(error));
+  const combined = messages.join(" ").toLowerCase();
+
+  if (
+    combined.includes("self-signed certificate")
+    || combined.includes("unable to verify the first certificate")
+    || combined.includes("certificate has expired")
+    || combined.includes("certificate")
+  ) {
+    return t("session_tls_error_hint", resolvedBaseURL);
+  }
+
+  if (message.toLowerCase().includes("connection error")) {
+    return t("session_connection_error_hint", resolvedBaseURL);
+  }
+
+  return message;
+}
+
 export function getCompactPromptTokenThreshold(model: string): number {
   return DEEPSEEK_V4_MODELS.has(model)
     ? DEEPSEEK_V4_COMPACT_PROMPT_TOKEN_THRESHOLD
@@ -1166,7 +1221,7 @@ ${skillMd}
         false,
       )
     } catch (error) {
-      const errMessage = error instanceof Error ? error.message : String(error);
+      const errMessage = toUserFacingRequestError(error, baseURL);
       const aborted = this.isAbortLikeError(error) || sessionController.signal.aborted;
       this.updateSessionEntry(sessionId, (entry) => ({
         ...entry,

@@ -101,6 +101,17 @@ Yes. Just set `env.BASE_URL` in `~/.deepcode/settings.json` to an OpenAI-compati
 
 ## Build from Source
 
+### One-command Release Build (auto-select by current OS)
+
+```bash
+npm run build:release
+```
+
+- macOS: produces `dist/deepcode`, and additionally writes `dist/deepcode-mac` for release.
+- Windows: produces `dist/deepcode.exe`, and additionally writes `dist/deepcode-win.exe` for release.
+
+> Note: this command runs `npm run build` first, then runs the platform SEA build for your current OS.
+
 ### Prerequisites
 
 - Node.js >= 18.17.0 (Node.js v25+ recommended for building standalone exe)

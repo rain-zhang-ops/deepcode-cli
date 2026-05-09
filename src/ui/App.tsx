@@ -498,6 +498,7 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
               "app_settings_summary",
               keyStatus,
               resolvedSettings.model,
+              resolvedSettings.baseURL,
               resolvedSettings.thinkingEnabled ? t("app_settings_enabled") : t("app_settings_disabled"),
               resolvedSettings.reasoningEffort,
               currentCwd,

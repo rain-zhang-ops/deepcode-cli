@@ -3,6 +3,10 @@ import { render } from "ink";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { bootstrapTrustedTls } from "./network/tls-bootstrap";
+
+bootstrapTrustedTls();
+
 import { App } from "./ui";
 import { setShellIfWindows } from "./tools/shell-utils";
 import { ensureRecommendedCliTools } from "./tools/managed-tools";
