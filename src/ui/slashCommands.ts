@@ -1,7 +1,7 @@
 import type { SkillInfo } from "../session";
 import { t } from "../i18n";
 
-export type SlashCommandKind = "skill" | "skills" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "new" | "resume" | "exit" | "model" | "thinking" | "effort" | "cwd" | "skill-new" | "mcp-add" | "key" | "settings";
+export type SlashCommandKind = "skill" | "skills" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "new" | "resume" | "exit" | "model" | "thinking" | "effort" | "cwd" | "skill-new" | "mcp-add" | "key" | "settings" | "mode" | "todos";
 
 export type SlashCommandItem = {
   kind: SlashCommandKind;
@@ -125,6 +125,18 @@ export const BUILTIN_SLASH_COMMANDS: SlashCommandItem[] = [
     name: "settings",
     label: "/settings",
     description: t("slash_settings")
+  },
+  {
+    kind: "mode",
+    name: "mode",
+    label: "/mode",
+    description: t("slash_mode")
+  },
+  {
+    kind: "todos",
+    name: "todos",
+    label: "/todos",
+    description: t("slash_todos")
   }
 ];
 

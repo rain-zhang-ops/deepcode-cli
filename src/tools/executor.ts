@@ -1,11 +1,20 @@
 import type OpenAI from "openai";
 import type { ReasoningEffort } from "../settings";
+import { getPermissionService } from "../services/PermissionService";
 import { handleAskUserQuestionTool } from "./ask-user-question-handler";
 import { handleBashTool } from "./bash-handler";
 import { handleEditTool } from "./edit-handler";
 import { handleReadTool } from "./read-handler";
+import { handleTodoReadTool } from "./todo-read-handler";
+import { handleTodoWriteTool } from "./todo-write-handler";
 import { handleWebSearchTool } from "./web-search-handler";
 import { handleWriteTool } from "./write-handler";
+
+/** Tools that are safe to execute in parallel (read-only, no side effects). */
+export const READ_ONLY_TOOLS = new Set(["read", "WebSearch", "TodoRead"]);
+
+/** Maximum number of read-only tools to run concurrently in one batch. */
+const MAX_PARALLEL_READS = 5;
 
 export type CreateOpenAIClient = () => {
   client: OpenAI | null;
@@ -92,22 +101,61 @@ export class ToolExecutor {
       .map((toolCall) => this.parseToolCall(toolCall))
       .filter((toolCall): toolCall is ToolCall => Boolean(toolCall));
 
-    const executions: ToolCallExecution[] = [];
-    for (const toolCall of parsedCalls) {
-      if (hooks?.shouldStop?.()) {
-        break;
-      }
-      const result = await this.executeToolCall(sessionId, toolCall, hooks);
-      executions.push({
-        toolCallId: toolCall.id,
-        content: this.formatToolResult(result),
-        result
-      });
-      if (hooks?.shouldStop?.()) {
-        break;
+    // Split into batches: consecutive read-only tools run in parallel; write tools are serial.
+    // We process batches left-to-right, preserving original ordering in the output.
+    const resultMap = new Map<string, ToolCallExecution>();
+
+    let i = 0;
+    while (i < parsedCalls.length) {
+      if (hooks?.shouldStop?.()) break;
+
+      const toolName = parsedCalls[i].function.name;
+      if (READ_ONLY_TOOLS.has(toolName)) {
+        // Collect a batch of consecutive read-only tools (up to MAX_PARALLEL_READS).
+        const batch: ToolCall[] = [];
+        while (
+          i < parsedCalls.length &&
+          READ_ONLY_TOOLS.has(parsedCalls[i].function.name) &&
+          batch.length < MAX_PARALLEL_READS
+        ) {
+          batch.push(parsedCalls[i]);
+          i++;
+        }
+
+        // Execute batch in parallel, then check shouldStop.
+        const batchResults = await Promise.all(
+          batch.map(async (toolCall) => {
+            const result = await this.executeToolCall(sessionId, toolCall, hooks);
+            return {
+              toolCallId: toolCall.id,
+              content: this.formatToolResult(result),
+              result
+            };
+          })
+        );
+
+        if (hooks?.shouldStop?.()) break;
+        for (const exec of batchResults) {
+          resultMap.set(exec.toolCallId, exec);
+        }
+      } else {
+        // Serial write tool.
+        const toolCall = parsedCalls[i];
+        i++;
+        const result = await this.executeToolCall(sessionId, toolCall, hooks);
+        resultMap.set(toolCall.id, {
+          toolCallId: toolCall.id,
+          content: this.formatToolResult(result),
+          result
+        });
+        if (hooks?.shouldStop?.()) break;
       }
     }
-    return executions;
+
+    // Return results in original order (important for OpenAI tool_call_id pairing).
+    return parsedCalls
+      .map((tc) => resultMap.get(tc.id))
+      .filter((exec): exec is ToolCallExecution => exec !== undefined);
   }
 
   private registerToolHandlers(): void {
@@ -117,6 +165,8 @@ export class ToolExecutor {
     this.toolHandlers.set("edit", handleEditTool);
     this.toolHandlers.set("AskUserQuestion", handleAskUserQuestionTool);
     this.toolHandlers.set("WebSearch", handleWebSearchTool);
+    this.toolHandlers.set("TodoWrite", handleTodoWriteTool);
+    this.toolHandlers.set("TodoRead", handleTodoReadTool);
   }
 
   private parseToolCall(toolCall: unknown): ToolCall | null {
@@ -171,16 +221,25 @@ export class ToolExecutor {
       };
     }
 
-    const parsedArgs = this.parseToolArguments(toolCall.function.arguments);
-    if (!parsedArgs.ok) {
-      return {
-        ok: false,
-        name: toolName,
-        error: parsedArgs.error
-      };
-    }
-
     try {
+      const parsedArgs = this.parseToolArguments(toolCall.function.arguments);
+      if (!parsedArgs.ok) {
+        return {
+          ok: false,
+          name: toolName,
+          error: parsedArgs.error
+        };
+      }
+
+      const permission = getPermissionService().check(toolName, parsedArgs.args);
+      if (!permission.allowed) {
+        return {
+          ok: false,
+          name: toolName,
+          error: permission.reason
+        };
+      }
+
       return await handler(parsedArgs.args, {
         sessionId,
         projectRoot: this.projectRoot,

@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { resolveSettings, type DeepcodingSettings, type ResolvedDeepcodingSettings } from "../settings";
+import { resolveSettings, type DeepcodingSettings, type PermissionMode, type ResolvedDeepcodingSettings, DEFAULT_PERMISSION_MODE } from "../settings";
 
 const DEFAULT_MODEL = "deepseek-v4-pro";
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
@@ -53,6 +53,34 @@ export class SettingsService {
     const updated = updater(raw);
     this.writeSettingsFile(updated);
     this.cache = null; // Invalidate cache
+  }
+
+  /**
+   * Get the current permission mode (with default fallback).
+   */
+  getPermissionMode(): PermissionMode {
+    const raw = this.readSettingsFile();
+    const mode = raw.permissionMode;
+    if (mode === "plan" || mode === "accept-edits" || mode === "bypass-permissions") {
+      return mode;
+    }
+    return DEFAULT_PERMISSION_MODE;
+  }
+
+  /**
+   * Set the permission mode.
+   */
+  setPermissionMode(mode: PermissionMode): void {
+    this.updateSettings((s) => ({ ...s, permissionMode: mode }));
+  }
+
+  /**
+   * Get the AskUserQuestion call limit per session (default 2).
+   */
+  getAskUserQuestionLimit(): number {
+    const raw = this.readSettingsFile();
+    const limit = raw.askUserQuestionLimit;
+    return typeof limit === "number" && limit > 0 ? Math.floor(limit) : 2;
   }
 
   /**

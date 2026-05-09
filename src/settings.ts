@@ -15,6 +15,10 @@ export type McpServerConfig = {
   env?: Record<string, string>;
 };
 
+export type PermissionMode = "plan" | "accept-edits" | "bypass-permissions";
+
+export const DEFAULT_PERMISSION_MODE: PermissionMode = "accept-edits";
+
 export type DeepcodingSettings = {
   env?: DeepcodingEnv;
   thinkingEnabled?: boolean;
@@ -25,6 +29,8 @@ export type DeepcodingSettings = {
   notify?: string;
   webSearchTool?: string;
   mcpServers?: Record<string, McpServerConfig>;
+  permissionMode?: PermissionMode;
+  askUserQuestionLimit?: number;
 };
 
 export type ResolvedDeepcodingSettings = {

@@ -14,6 +14,7 @@ import { logOpenAIChatCompletionDebug, normalizeDebugError } from "./debug-logge
 import { t } from "./i18n";
 import { getTotalTokens, estimateStreamTokens, formatEstimatedTokens } from "./utils/token-utils";
 import { MAX_SESSION_ENTRIES, DEFAULT_COMPACT_PROMPT_TOKEN_THRESHOLD, DEEPSEEK_V4_COMPACT_PROMPT_TOKEN_THRESHOLD } from "./constants";
+import { getSettingsService } from "./services/SettingsService";
 
 const DEFAULT_NEW_PROMPT_API_URL = "https://deepcode.vegamo.cn/api/plugin/new";
 
@@ -149,6 +150,7 @@ export type SessionEntry = {
   createTime: string;
   updateTime: string;
   processes: Map<string, { startTime: string; command: string }> | null;  // {pid: {startTime, command}}
+  askUserQuestionCount: number;
 };
 
 export type SessionsIndex = {
@@ -956,7 +958,8 @@ The candidate skills are as follows:\n\n`;
       activeTokens: 0,
       createTime: now,
       updateTime: now,
-      processes: null
+      processes: null,
+      askUserQuestionCount: 0
     };
     index.entries.push(entry);
     const sortedEntries = index.entries
@@ -1751,9 +1754,32 @@ ${skillMd}
     }
     let waitingForUser = false;
     const followUpMessages: SessionMessage[] = [];
+    const askLimit = getSettingsService().getAskUserQuestionLimit();
     for (const execution of toolExecutions) {
       if (execution.result.awaitUserResponse === true) {
-        waitingForUser = true;
+        const currentCount = this.getSession(sessionId)?.askUserQuestionCount ?? 0;
+        if (currentCount >= askLimit) {
+          // Downgrade: replace awaitUserResponse with an inline error so the loop continues.
+          execution.result = {
+            ...execution.result,
+            ok: false,
+            awaitUserResponse: false,
+            error:
+              `AskUserQuestion limit reached (${askLimit} per session). ` +
+              "Please continue based on available information without asking the user."
+          };
+          execution.content = JSON.stringify({
+            ok: false,
+            name: "AskUserQuestion",
+            error: execution.result.error
+          }, null, 2);
+        } else {
+          this.updateSessionEntry(sessionId, (entry) => ({
+            ...entry,
+            askUserQuestionCount: (entry.askUserQuestionCount ?? 0) + 1
+          }));
+          waitingForUser = true;
+        }
       }
       const toolFunction = this.findToolFunction(toolCalls, execution.toolCallId);
       const toolMessage = this.buildToolMessage(
@@ -2194,7 +2220,11 @@ ${skillMd}
       activeTokens: typeof value.activeTokens === "number" ? value.activeTokens : 0,
       createTime: typeof value.createTime === "string" ? value.createTime : new Date().toISOString(),
       updateTime: typeof value.updateTime === "string" ? value.updateTime : new Date().toISOString(),
-      processes: this.deserializeProcesses(value.processes)
+      processes: this.deserializeProcesses(value.processes),
+      askUserQuestionCount:
+        typeof value.askUserQuestionCount === "number" && value.askUserQuestionCount >= 0
+          ? Math.floor(value.askUserQuestionCount)
+          : 0
     };
   }
 

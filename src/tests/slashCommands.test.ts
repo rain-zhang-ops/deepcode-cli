@@ -14,18 +14,40 @@ const skills: SkillInfo[] = [
   { name: "code-review", path: "~/.agents/skills/code-review/SKILL.md", description: "Review code" }
 ];
 
-test("buildSlashCommands prefixes skills before built-ins", () => {
+test("buildSlashCommands keeps built-ins before skills", () => {
   const items = buildSlashCommands(skills);
-  assert.equal(items[0].kind, "skill");
-  assert.equal(items[0].name, "skill-writer");
+  assert.equal(items[0].kind, "skills");
+  assert.equal(items[0].name, "skills");
   const builtinNames = items.filter((i) => i.kind !== "skill").map((i) => i.name);
-  assert.deepEqual(builtinNames, ["skills", "goal", "compact", "diff", "copy", "clear", "context", "init", "new", "resume", "exit"]);
+  assert.deepEqual(builtinNames, [
+    "skills",
+    "goal",
+    "compact",
+    "diff",
+    "copy",
+    "clear",
+    "context",
+    "init",
+    "new",
+    "resume",
+    "exit",
+    "model",
+    "thinking",
+    "effort",
+    "cwd",
+    "skill",
+    "mcp",
+    "key",
+    "settings",
+    "mode",
+    "todos"
+  ]);
 });
 
 test("filterSlashCommands matches partial prefixes", () => {
   const items = buildSlashCommands(skills);
   const matched = filterSlashCommands(items, "/skil").map((i) => i.name);
-  assert.deepEqual(matched, ["skill-writer", "skills"]);
+  assert.deepEqual(matched, ["skills", "skill", "skill-writer"]);
 });
 
 test("filterSlashCommands returns all entries on bare slash", () => {
@@ -76,6 +98,11 @@ test("formatSlashCommandLabel marks loaded skills", () => {
     { name: "fresh", path: "/skills/fresh/SKILL.md", description: "Fresh skill" }
   ]);
 
-  assert.equal(formatSlashCommandLabel(items[0]), "/loaded ✓");
-  assert.equal(formatSlashCommandLabel(items[1]), "/fresh");
+  const loaded = items.find((item) => item.name === "loaded");
+  const fresh = items.find((item) => item.name === "fresh");
+  assert.ok(loaded);
+  assert.ok(fresh);
+
+  assert.equal(formatSlashCommandLabel(loaded), "/loaded ✓");
+  assert.equal(formatSlashCommandLabel(fresh), "/fresh");
 });

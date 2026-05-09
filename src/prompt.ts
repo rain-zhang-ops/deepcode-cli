@@ -245,7 +245,20 @@ Here's an example of how your output should be structured:
 
 const SYSTEM_PROMPT_BASE = `You are an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
 
-IMPORTANT: You must NEVER generate or guess URLs for the user unless you are confident that the URLs are for helping the user with programming. You may use URLs provided by the user in their messages or local files.`;
+IMPORTANT: You must NEVER generate or guess URLs for the user unless you are confident that the URLs are for helping the user with programming. You may use URLs provided by the user in their messages or local files.
+
+# Task Planning
+
+When a request involves **3 or more steps**, spans **multiple files**, or lists **multiple requirements**, you MUST:
+
+1. Call **TodoWrite** as your VERY FIRST tool call to create a structured task list.
+2. Set exactly ONE item to \`in_progress\` — the task you are about to work on.
+3. After completing each task, immediately call **TodoWrite** to mark it \`completed\` and set the next task to \`in_progress\`.
+4. Never stop mid-task to ask the user for confirmation unless the AskUserQuestion tool is absolutely necessary (missing critical information that cannot be inferred).
+
+For **simple, single-step tasks** (a single file edit, a single command, a simple question): do NOT use TodoWrite. Execute directly.
+
+After a context compaction (your memory was summarized), call **TodoRead** first to recall the pending task list before continuing.`;
 
 type PromptToolOptions = {
   webSearchEnabled?: boolean;
@@ -451,7 +464,13 @@ export function getTools(options: PromptToolOptions = {}): ToolDefinition[] {
       function: {
         name: "AskUserQuestion",
         description:
-          "When the task has ambiguities or multiple implementation approaches, use this tool to pause execution and ask the user a question to get clarification or make a decision.",
+          "Ask the user a clarifying question when critical information is missing and cannot be inferred from context. " +
+          "ONLY use this tool when: (1) the user's intent is genuinely ambiguous and execution would otherwise be wrong, " +
+          "OR (2) a decision with irreversible consequences requires explicit user approval. " +
+          "DO NOT use this tool: to confirm completed steps, to provide progress updates, to validate assumptions that can be reasonably inferred, " +
+          "or when an execution plan is already clear. " +
+          "During active execution of a known plan, prefer continuing to the next step over asking questions. " +
+          "This tool interrupts execution — use it sparingly (at most twice per session).",
         parameters: {
           type: "object",
           properties: {
@@ -619,5 +638,64 @@ export function getTools(options: PromptToolOptions = {}): ToolDefinition[] {
     },
   });
 
+  tools.push({
+    type: "function",
+    function: {
+      name: "TodoWrite",
+      description:
+        "Overwrite the TODO list for the current session. Use this to plan and track multi-step tasks. " +
+        "WHEN TO USE: Call this as your FIRST tool when the request involves 3+ steps, spans multiple files, or lists multiple requirements. " +
+        "Update it after each step completes — mark the finished item 'completed', set the next item 'in_progress'. " +
+        "DO NOT use for simple single-step tasks (one file edit, one command). " +
+        "Exactly one todo may have status 'in_progress' at a time.",
+      parameters: {
+        type: "object",
+        properties: {
+          todos: {
+            type: "array",
+            description: "Complete replacement list of all todos for this session.",
+            items: {
+              type: "object",
+              properties: {
+                id: {
+                  type: "string",
+                  description: "Stable identifier for this todo (e.g. 'todo-1'). Keep the same id across updates.",
+                },
+                content: {
+                  type: "string",
+                  description: "A short, action-oriented description of the task.",
+                },
+                status: {
+                  type: "string",
+                  enum: ["pending", "in_progress", "completed"],
+                  description: "Current status. Exactly one item should be 'in_progress'.",
+                },
+              },
+              required: ["id", "content", "status"],
+            },
+          },
+        },
+        required: ["todos"],
+        additionalProperties: false,
+      },
+    },
+  });
+
+  tools.push({
+    type: "function",
+    function: {
+      name: "TodoRead",
+      description:
+        "Read the current TODO list for this session. " +
+        "Use this after a context compaction to recall pending tasks.",
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+    },
+  });
+
   return tools;
 }
+

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as path from "path";
 import {
   buildDisableExtglobCommand,
   getShellKind,
@@ -56,15 +57,15 @@ test("File tool absolute checks accept Git Bash drive paths but reject root-rela
 });
 
 test("Managed tool helpers keep local bin ahead of PATH without duplication", () => {
-  const homeDir = "C:\\Users\\example";
+  const homeDir = "/home/example";
   const binDir = getManagedToolsBinDir(homeDir);
-  const firstPath = prependManagedToolsToPath("C:\\Windows\\System32", homeDir);
-  assert.equal(firstPath.startsWith(`${binDir};`), true);
+  const firstPath = prependManagedToolsToPath("/usr/bin", homeDir);
+  assert.equal(firstPath.startsWith(`${binDir}${path.delimiter}`), true);
   const secondPath = prependManagedToolsToPath(firstPath, homeDir);
   assert.equal(secondPath, firstPath);
 });
 
 test("Managed tool path resolves windows executables in local tool cache", () => {
   const executable = getManagedToolExecutablePath("rg", "win32", "C:\\Users\\example");
-  assert.equal(executable, "C:\\Users\\example\\.deepcode\\tools\\bin\\rg.exe");
+  assert.equal(executable, path.join("C:\\Users\\example", ".deepcode", "tools", "bin", "rg.exe"));
 });

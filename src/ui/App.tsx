@@ -35,6 +35,7 @@ import {
 } from "./askUserQuestion";
 import { buildExitSummaryText } from "./exitSummary";
 import { writeClipboardText } from "./clipboard";
+import { TodoPanel } from "./TodoPanel";
 
 const GOAL_MODE_INSTRUCTIONS = [
   "Operate in autonomous goal mode: keep taking concrete actions toward the goal.",
@@ -66,6 +67,7 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
   const [dismissedQuestionIds, setDismissedQuestionIds] = useState<Set<string>>(() => new Set());
   const [isExiting, setIsExiting] = useState(false);
   const [showWelcome, setShowWelcome] = useState(true);
+  const [showTodos, setShowTodos] = useState(true);
   const [, setNowTick] = useState(0);
   const turnStartRef = useRef<number>(0);
 
@@ -509,6 +511,27 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
         return;
       }
 
+      if (submission.command === "todos") {
+        setShowTodos((prev) => !prev);
+        return;
+      }
+
+      if (submission.command === "mode") {
+        const modeVal = (submission.text ?? "").trim().toLowerCase();
+        if (!modeVal) {
+          const current = getSettingsService().getPermissionMode();
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_mode_current", current))]);
+          return;
+        }
+        if (modeVal !== "plan" && modeVal !== "accept-edits" && modeVal !== "bypass-permissions") {
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_mode_invalid"))]);
+          return;
+        }
+        getSettingsService().setPermissionMode(modeVal as "plan" | "accept-edits" | "bypass-permissions");
+        setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_mode_changed", modeVal))]);
+        return;
+      }
+
       const goalText = submission.command === "goal" ? (submission.text ?? "").trim() : "";
       const promptText = goalText
         ? [
@@ -671,6 +694,11 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
           );
         }}
       </Static>
+      <TodoPanel
+        projectRoot={projectRoot}
+        sessionId={sessionManager.getActiveSessionId()}
+        visible={showTodos}
+      />
       {statusLine ? (
         <Box>
           <Text dimColor>{statusLine}</Text>
@@ -758,6 +786,10 @@ function buildSyntheticAssistantMessage(content: string): SessionMessage {
 function buildStatusLine(entry: SessionEntry): string {
   const parts: string[] = [];
   parts.push(`status: ${entry.status}`);
+  const mode = getSettingsService().getPermissionMode();
+  if (mode !== "accept-edits") {
+    parts.push(`mode: ${mode}`);
+  }
   if (typeof entry.activeTokens === "number" && entry.activeTokens > 0) {
     parts.push(`tokens: ${entry.activeTokens}`);
   }

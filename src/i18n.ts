@@ -137,6 +137,12 @@ const translations = {
     slash_mcp: "Add an MCP server config (usage: /mcp <name> <command> [args...])",
     slash_key: "Update API key (usage: /key <api_key>)",
     slash_settings: "Show current key/model/thinking/effort/cwd/tool status",
+    slash_mode: "Switch permission mode: plan | accept-edits | bypass-permissions (usage: /mode <mode>)",
+    slash_todos: "Toggle TODO panel visibility",
+    // app mode command feedback
+    app_mode_current: "Current permission mode: **{0}**\nUsage: `/mode plan|accept-edits|bypass-permissions`",
+    app_mode_changed: "Permission mode set to: **{0}**",
+    app_mode_invalid: "Invalid mode. Use: `plan`, `accept-edits`, or `bypass-permissions`",
     // app settings command feedback
     app_model_current: "Current model: **{0}**\nUsage: `/model <name>`",
     app_model_changed: "Model switched to: **{0}**",
@@ -334,6 +340,12 @@ const translations = {
     slash_mcp: "\u6dfb\u52a0 MCP \u670d\u52a1\u5668\u914d\u7f6e\uff08\u7528\u6cd5\uff1a/mcp <\u540d\u79f0> <\u547d\u4ee4> [\u53c2\u6570...]\uff09",
     slash_key: "\u66f4\u65b0 API \u5bc6\u94a5\uff08\u7528\u6cd5\uff1a/key <api_key>\uff09",
     slash_settings: "\u663e\u793a key\u3001\u6a21\u578b\u3001\u601d\u8003\u3001\u63a8\u7406\u3001CWD \u548c\u5de5\u5177\u72b6\u6001",
+    slash_mode: "\u5207\u6362\u6743\u9650\u6a21\u5f0f\uff1aplan | accept-edits | bypass-permissions\uff08\u7528\u6cd5\uff1a/mode <\u6a21\u5f0f>\uff09",
+    slash_todos: "\u5207\u6362 TODO \u9762\u677f\u53ef\u89c1\u6027",
+    // app mode command feedback
+    app_mode_current: "\u5f53\u524d\u6743\u9650\u6a21\u5f0f\uff1a**{0}**\n\u7528\u6cd5\uff1a`/mode plan|accept-edits|bypass-permissions`",
+    app_mode_changed: "\u6743\u9650\u6a21\u5f0f\u5df2\u8bbe\u4e3a\uff1a**{0}**",
+    app_mode_invalid: "\u65e0\u6548\u6a21\u5f0f\u3002\u8bf7\u4f7f\u7528\uff1a`plan`\u3001`accept-edits` \u6216 `bypass-permissions`",
     // app settings command feedback
     app_model_current: "\u5f53\u524d\u6a21\u578b\uff1a**{0}**\n\u7528\u6cd5\uff1a`/model <\u540d\u79f0>`",
     app_model_changed: "\u6a21\u578b\u5df2\u5207\u6362\u4e3a\uff1a**{0}**",
