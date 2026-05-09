@@ -10,6 +10,8 @@ import {
   formatSlashCommandDescription
 } from "./slashCommands";
 import { ThemedGradient } from "./ThemedGradient";
+import { t } from "../i18n";
+import { getRecommendedCliToolsStatus } from "../tools/managed-tools";
 
 type WelcomeScreenProps = {
   projectRoot: string;
@@ -22,17 +24,23 @@ type WelcomeScreenProps = {
 const TITLE_PANEL_WIDTH = 70;
 const PANEL_CONTENT_HEIGHT = 8;
 
-const SHORTCUT_TIPS = [
-  { label: "Enter", description: "Send the prompt" },
-  { label: "Shift+Enter", description: "Insert a newline" },
-  { label: "Ctrl+V", description: "Paste an image from the clipboard" },
-  { label: "Esc", description: "Interrupt the current model turn" },
-  { label: "/", description: "Open the skills and commands menu" },
-  { label: "Ctrl+D twice", description: "Quit Deep Code CLI" }
+const SHORTCUT_TIPS: Array<{ label: string; descKey: string }> = [
+  { label: "Enter", descKey: "welcome_shortcut_enter" },
+  { label: "Shift+Enter", descKey: "welcome_shortcut_shift_enter" },
+  { label: "Ctrl+V", descKey: "welcome_shortcut_ctrl_v" },
+  { label: "Esc", descKey: "welcome_shortcut_esc" },
+  { label: "/", descKey: "welcome_shortcut_slash" },
+  { label: "Ctrl+D twice", descKey: "welcome_shortcut_ctrl_d" }
 ];
 
-const RECOMMENDED_TIPS = [
-  { label: "rg + jq", description: "Install rg and jq to boost Bash exploration signal and information density" }
+const RECOMMENDED_TIPS: Array<{ label: string; description: () => string }> = [
+  {
+    label: "rg + jq",
+    description: () => {
+      const status = getRecommendedCliToolsStatus();
+      return status.rg && status.jq ? t("welcome_tip_rg_jq_ready") : t("welcome_tip_rg_jq");
+    }
+  }
 ];
 
 export function WelcomeScreen({
@@ -84,10 +92,10 @@ export function WelcomeScreen({
               <Text color='gray'> (v{version || "unknown"})</Text>
             </Box>
             {!compact ? <Text> </Text> : null}
-            <SettingRow label="Model" value={settings.model} />
-            <SettingRow label="Thinking Enabled" value={String(settings.thinkingEnabled)} />
-            <SettingRow label="Reasoning Effort" value={settings.reasoningEffort} />
-            <SettingRow label="CWD" value={cwd} />
+            <SettingRow label={t("welcome_label_model")} value={settings.model} />
+            <SettingRow label={t("welcome_label_thinking")} value={String(settings.thinkingEnabled)} />
+            <SettingRow label={t("welcome_label_effort")} value={settings.reasoningEffort} />
+            <SettingRow label={t("welcome_label_cwd")} value={cwd} />
           </Box>
         </Box>
       </Box>
@@ -95,7 +103,7 @@ export function WelcomeScreen({
       {tip ? (
         <Box marginTop={1}>
           <Text dimColor>
-            Tips: {tip.label} - {tip.description}
+            {t("welcome_tips_prefix")}{tip.label} - {tip.description}
           </Text>
         </Box>
       ) : null}
@@ -140,8 +148,10 @@ export function buildWelcomeTips(skills: SkillInfo[]): Array<{ label: string; de
 
   return [
     ...slashTips,
-    ...SHORTCUT_TIPS.filter((tip) => !BUILTIN_SLASH_COMMANDS.some((command) => command.label === tip.label)),
-    ...RECOMMENDED_TIPS
+    ...SHORTCUT_TIPS
+      .filter((tip) => !BUILTIN_SLASH_COMMANDS.some((command) => command.label === tip.label))
+      .map((tip) => ({ label: tip.label, description: t(tip.descKey as Parameters<typeof t>[0]) })),
+    ...RECOMMENDED_TIPS.map((tip) => ({ label: tip.label, description: tip.description() }))
   ];
 }
 

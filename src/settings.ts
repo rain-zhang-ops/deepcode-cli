@@ -9,6 +9,12 @@ export type DeepcodingEnv = {
 
 export type ReasoningEffort = "high" | "max";
 
+export type McpServerConfig = {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+};
+
 export type DeepcodingSettings = {
   env?: DeepcodingEnv;
   thinkingEnabled?: boolean;
@@ -18,6 +24,7 @@ export type DeepcodingSettings = {
   maxRetries?: number;
   notify?: string;
   webSearchTool?: string;
+  mcpServers?: Record<string, McpServerConfig>;
 };
 
 export type ResolvedDeepcodingSettings = {

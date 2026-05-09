@@ -1,6 +1,7 @@
 import type { SkillInfo } from "../session";
+import { t } from "../i18n";
 
-export type SlashCommandKind = "skill" | "skills" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "new" | "resume" | "exit";
+export type SlashCommandKind = "skill" | "skills" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "new" | "resume" | "exit" | "model" | "thinking" | "effort" | "cwd" | "skill-new" | "mcp-add" | "key" | "settings";
 
 export type SlashCommandItem = {
   kind: SlashCommandKind;
@@ -15,67 +16,115 @@ export const BUILTIN_SLASH_COMMANDS: SlashCommandItem[] = [
     kind: "skills",
     name: "skills",
     label: "/skills",
-    description: "List available skills"
+    description: t("slash_skills")
   },
   {
     kind: "goal",
     name: "goal",
     label: "/goal",
-    description: "Set a long-running goal and let the agent keep working"
+    description: t("slash_goal")
   },
   {
     kind: "compact",
     name: "compact",
     label: "/compact",
-    description: "Summarize old context to free up space in the context window"
+    description: t("slash_compact")
   },
   {
     kind: "diff",
     name: "diff",
     label: "/diff",
-    description: "Show the current git diff inline in the conversation"
+    description: t("slash_diff")
   },
   {
     kind: "copy",
     name: "copy",
     label: "/copy",
-    description: "Copy the last assistant response to the clipboard"
+    description: t("slash_copy")
   },
   {
     kind: "clear",
     name: "clear",
     label: "/clear",
-    description: "Clear the terminal screen"
+    description: t("slash_clear")
   },
   {
     kind: "context",
     name: "context",
     label: "/context",
-    description: "Show context window token usage for the current session"
+    description: t("slash_context")
   },
   {
     kind: "init",
     name: "init",
     label: "/init",
-    description: "Generate an AGENTS.md for this project"
+    description: t("slash_init")
   },
   {
     kind: "new",
     name: "new",
     label: "/new",
-    description: "Start a fresh conversation"
+    description: t("slash_new")
   },
   {
     kind: "resume",
     name: "resume",
     label: "/resume",
-    description: "Pick a previous conversation to continue"
+    description: t("slash_resume")
   },
   {
     kind: "exit",
     name: "exit",
     label: "/exit",
-    description: "Quit Deep Code CLI"
+    description: t("slash_exit")
+  },
+  {
+    kind: "model",
+    name: "model",
+    label: "/model",
+    description: t("slash_model")
+  },
+  {
+    kind: "thinking",
+    name: "thinking",
+    label: "/thinking",
+    description: t("slash_thinking")
+  },
+  {
+    kind: "effort",
+    name: "effort",
+    label: "/effort",
+    description: t("slash_effort")
+  },
+  {
+    kind: "cwd",
+    name: "cwd",
+    label: "/cwd",
+    description: t("slash_cwd")
+  },
+  {
+    kind: "skill-new",
+    name: "skill",
+    label: "/skill",
+    description: t("slash_skill")
+  },
+  {
+    kind: "mcp-add",
+    name: "mcp",
+    label: "/mcp",
+    description: t("slash_mcp")
+  },
+  {
+    kind: "key",
+    name: "key",
+    label: "/key",
+    description: t("slash_key")
+  },
+  {
+    kind: "settings",
+    name: "settings",
+    label: "/settings",
+    description: t("slash_settings")
   }
 ];
 
@@ -84,10 +133,11 @@ export function buildSlashCommands(skills: SkillInfo[]): SlashCommandItem[] {
     kind: "skill",
     name: skill.name,
     label: `/${skill.name}`,
-    description: skill.description || "(no description)",
+    description: skill.description || t("slash_no_desc"),
     skill
   }));
-  return [...skillItems, ...BUILTIN_SLASH_COMMANDS];
+  // Keep built-in operational commands visible first when menu is truncated.
+  return [...BUILTIN_SLASH_COMMANDS, ...skillItems];
 }
 
 export function filterSlashCommands(
@@ -117,7 +167,7 @@ export function findExactSlashCommand(
 }
 
 export function formatSlashCommandDescription(description: string): string {
-  return (description || "(no description)").trim().replace(/\s+/g, " ");
+  return (description || t("slash_no_desc")).trim().replace(/\s+/g, " ");
 }
 
 export function formatSlashCommandLabel(item: SlashCommandItem): string {

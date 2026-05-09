@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as pathWin32 from "path/win32";
+import { getManagedToolExecutablePath, prependManagedToolsToPath } from "./managed-tools";
 
 const WINDOWS_GIT_LOCATIONS = [
   "C:\\Program Files\\Git\\cmd\\git.exe",
@@ -142,7 +143,8 @@ export function buildShellEnv(shellPath: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     SHELL: shellPath,
-    GIT_EDITOR: "true"
+    GIT_EDITOR: "true",
+    PATH: prependManagedToolsToPath(process.env.PATH)
   };
 
   if (process.platform === "win32") {
@@ -155,6 +157,11 @@ export function buildShellEnv(shellPath: string): NodeJS.ProcessEnv {
 }
 
 function findWindowsExecutable(executable: string): string | null {
+  const managedExecutable = getManagedToolExecutablePath(executable as "rg" | "jq");
+  if (managedExecutable && fs.existsSync(managedExecutable)) {
+    return managedExecutable;
+  }
+
   if (executable === "git") {
     for (const location of WINDOWS_GIT_LOCATIONS) {
       if (fs.existsSync(location)) {

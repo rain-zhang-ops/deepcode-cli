@@ -7,6 +7,7 @@ import {
   rewriteWindowsNullRedirect,
   windowsPathToPosixPath
 } from "../tools/shell-utils";
+import { getManagedToolExecutablePath, getManagedToolsBinDir, prependManagedToolsToPath } from "../tools/managed-tools";
 import { isAbsoluteFilePath, normalizeFilePath } from "../tools/state";
 
 test("Windows paths convert to Git Bash POSIX paths", () => {
@@ -52,4 +53,18 @@ test("File tool absolute checks accept Git Bash drive paths but reject root-rela
   assert.equal(isAbsoluteFilePath("D:/IdeaProjects/guesswho-api/API_DOCUMENTATION.md", "win32"), true);
   assert.equal(isAbsoluteFilePath("/dev/null", "win32"), false);
   assert.equal(isAbsoluteFilePath("./API_DOCUMENTATION.md", "win32"), false);
+});
+
+test("Managed tool helpers keep local bin ahead of PATH without duplication", () => {
+  const homeDir = "C:\\Users\\example";
+  const binDir = getManagedToolsBinDir(homeDir);
+  const firstPath = prependManagedToolsToPath("C:\\Windows\\System32", homeDir);
+  assert.equal(firstPath.startsWith(`${binDir};`), true);
+  const secondPath = prependManagedToolsToPath(firstPath, homeDir);
+  assert.equal(secondPath, firstPath);
+});
+
+test("Managed tool path resolves windows executables in local tool cache", () => {
+  const executable = getManagedToolExecutablePath("rg", "win32", "C:\\Users\\example");
+  assert.equal(executable, "C:\\Users\\example\\.deepcode\\tools\\bin\\rg.exe");
 });

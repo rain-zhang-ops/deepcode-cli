@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { setLocale, t } from "../i18n";
 import { buildWelcomeTips, formatHomeRelativePath } from "../ui";
 
 test("formatHomeRelativePath returns tilde for the home directory", () => {
@@ -7,14 +8,17 @@ test("formatHomeRelativePath returns tilde for the home directory", () => {
 });
 
 test("formatHomeRelativePath shortens paths inside the home directory", () => {
-  assert.equal(formatHomeRelativePath("/Users/example/dev/project", "/Users/example"), "~/dev/project");
+  const expected = process.platform === "win32" ? "~\\dev\\project" : "~/dev/project";
+  assert.equal(formatHomeRelativePath("/Users/example/dev/project", "/Users/example"), expected);
 });
 
 test("formatHomeRelativePath keeps paths outside the home directory absolute", () => {
-  assert.equal(formatHomeRelativePath("/tmp/project", "/Users/example"), "/tmp/project");
+  const expected = process.platform === "win32" ? "C:\\tmp\\project" : "/tmp/project";
+  assert.equal(formatHomeRelativePath("/tmp/project", "/Users/example"), expected);
 });
 
 test("buildWelcomeTips includes built-in slash commands and loaded skills", () => {
+  setLocale("en");
   const tips = buildWelcomeTips([
     { name: "loaded", path: "/skills/loaded/SKILL.md", description: "Loaded skill", isLoaded: true },
     { name: "fresh", path: "/skills/fresh/SKILL.md", description: "Fresh skill" }
@@ -26,5 +30,9 @@ test("buildWelcomeTips includes built-in slash commands and loaded skills", () =
   assert.ok(labels.includes("/loaded"));
   assert.equal(labels.includes("/fresh"), false);
   assert.ok(labels.includes("rg + jq"));
-  assert.equal(descriptions.some((description) => description.includes("rg") && description.includes("jq")), true);
+  assert.equal(
+    descriptions.includes(t("welcome_tip_rg_jq").toLowerCase())
+      || descriptions.includes(t("welcome_tip_rg_jq_ready").toLowerCase()),
+    true
+  );
 });

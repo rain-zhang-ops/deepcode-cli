@@ -3,9 +3,13 @@ import { Box, Static, Text, useApp, useStdout } from "ink";
 import chalk from "chalk";
 import * as fs from "fs";
 import * as os from "os";
+import { t } from "../i18n";
 import * as path from "path";
 import { execSync } from "child_process";
 import OpenAI from "openai";
+import { getSettingsService } from "../services/SettingsService";
+import { getSessionWorkingDirectory, setSessionWorkingDirectory } from "../tools/bash-handler";
+import { getRecommendedCliToolsStatus } from "../tools/managed-tools";
 import {
   SessionManager,
   type LlmStreamProgress,
@@ -16,6 +20,7 @@ import {
   type UserPromptContent
 } from "../session";
 import { resolveSettings, type DeepcodingSettings } from "../settings";
+import type { McpServerConfig } from "../settings";
 import { PromptInput, type PromptSubmission } from "./PromptInput";
 import { MessageView } from "./MessageView";
 import { SessionList } from "./SessionList";
@@ -31,8 +36,6 @@ import {
 import { buildExitSummaryText } from "./exitSummary";
 import { writeClipboardText } from "./clipboard";
 
-const DEFAULT_MODEL = "deepseek-v4-pro";
-const DEFAULT_BASE_URL = "https://api.deepseek.com";
 const GOAL_MODE_INSTRUCTIONS = [
   "Operate in autonomous goal mode: keep taking concrete actions toward the goal.",
   "If one turn ends before the goal is complete, continue proactively in subsequent turns until completion or user interruption."
@@ -73,7 +76,7 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
     return new SessionManager({
       projectRoot,
       createOpenAIClient: () => createOpenAIClient(),
-      getResolvedSettings: () => resolveCurrentSettings(),
+      getResolvedSettings: () => getSettingsService().getResolvedSettings(),
       renderMarkdown: (text) => text,
       onAssistantMessage: (message: SessionMessage) => {
         setMessages((prev) => [...prev, message]);
@@ -146,7 +149,7 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
           const allMessages = activeSessionId
             ? sessionManager.listSessionMessages(activeSessionId)
             : messagesRef.current;
-          const resolved = resolveCurrentSettings();
+          const resolved = getSettingsService().getResolvedSettings();
           const summary = buildExitSummaryText({ session, messages: allMessages, model: resolved.model });
           process.stdout.write("\n");
           process.stdout.write(chalk.green("> /exit "));
@@ -193,12 +196,12 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
           const ok = writeClipboardText(lastAssistant.content);
           setMessages((prev) => [
             ...prev,
-            buildSyntheticAssistantMessage(ok ? "Copied to clipboard." : "Could not write to clipboard. Ensure clipboard utilities are available for your system (pbcopy, xclip/xsel/wl-copy, or PowerShell).")
+            buildSyntheticAssistantMessage(ok ? t("app_copied") : t("app_copy_failed"))
           ]);
         } else {
           setMessages((prev) => [
             ...prev,
-            buildSyntheticAssistantMessage("No assistant response to copy yet.")
+            buildSyntheticAssistantMessage(t("app_copy_nothing"))
           ]);
         }
         return;
@@ -208,10 +211,10 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
         try {
           diffOutput = execSync("git diff", { cwd: projectRoot, encoding: "utf8" });
           if (!diffOutput.trim()) {
-            diffOutput = "(no uncommitted changes)";
+            diffOutput = t("app_diff_no_changes");
           }
         } catch {
-          diffOutput = "(not a git repository or git is not available)";
+          diffOutput = t("app_diff_no_git");
         }
         setMessages((prev) => [
           ...prev,
@@ -222,10 +225,10 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
       if (submission.command === "compact") {
         const activeSessionId = sessionManager.getActiveSessionId();
         if (!activeSessionId) {
-          setMessages((prev) => [...prev, buildSyntheticAssistantMessage("No active session to compact.")]);
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_compact_no_session"))]);
           return;
         }
-        const compactMsg = buildSyntheticAssistantMessage("Compacting conversation…");
+        const compactMsg = buildSyntheticAssistantMessage(t("app_compacting"));
         setMessages((prev) => [...prev, compactMsg]);
         setBusy(true);
         setErrorLine(null);
@@ -233,13 +236,13 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
           await sessionManager.compactSession(activeSessionId);
           setMessages((prev) => [
             ...prev.filter((m) => m.id !== compactMsg.id),
-            buildSyntheticAssistantMessage("Conversation compacted.")
+            buildSyntheticAssistantMessage(t("app_compacted"))
           ]);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           setMessages((prev) => [
             ...prev.filter((m) => m.id !== compactMsg.id),
-            buildSyntheticAssistantMessage(`Compaction failed: ${message}`)
+            buildSyntheticAssistantMessage(t("app_compact_failed", message))
           ]);
         } finally {
           setBusy(false);
@@ -262,7 +265,7 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
       if (submission.command === "context") {
         const activeSessionId = sessionManager.getActiveSessionId();
         if (!activeSessionId) {
-          setMessages((prev) => [...prev, buildSyntheticAssistantMessage("No active session.")]);
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_context_no_session"))]);
           return;
         }
         const entry = sessionManager.getSession(activeSessionId);
@@ -276,12 +279,12 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
           }
         }
         const lines = [
-          "**Context Window Usage**",
+          t("app_context_header"),
           "",
-          `- Active tokens (last response): ${tokens.toLocaleString()}`,
-          `- Total tokens used (session): ${totalTokens.toLocaleString()}`,
+          t("app_context_active_tokens", tokens.toLocaleString()),
+          t("app_context_total_tokens", totalTokens.toLocaleString()),
           "",
-          "_Tip: use `/compact` to free up context window space._"
+          t("app_context_tip")
         ];
         setMessages((prev) => [...prev, buildSyntheticAssistantMessage(lines.join("\n"))]);
         return;
@@ -295,8 +298,8 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
             buildSyntheticUserMessage(`# ${note}`, 0),
             buildSyntheticAssistantMessage(
               ok
-                ? `Saved to AGENTS.md: _"${note}"_`
-                : "Could not write to AGENTS.md — check file permissions."
+                ? t("app_note_saved", note)
+                : t("app_note_failed")
             )
           ]);
         }
@@ -307,11 +310,11 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
         if (fs.existsSync(agentsPath)) {
           setMessages((prev) => [
             ...prev,
-            buildSyntheticAssistantMessage(`AGENTS.md already exists at \`${agentsPath}\`. Edit it manually or delete it first.`)
+            buildSyntheticAssistantMessage(t("app_agents_exists", agentsPath))
           ]);
           return;
         }
-        const initMsg = buildSyntheticAssistantMessage("Generating AGENTS.md for this project…");
+        const initMsg = buildSyntheticAssistantMessage(t("app_agents_generating"));
         setMessages((prev) => [...prev, initMsg]);
         setBusy(true);
         setErrorLine(null);
@@ -319,17 +322,189 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
           await sessionManager.generateAgentsMd(projectRoot);
           setMessages((prev) => [
             ...prev.filter((m) => m.id !== initMsg.id),
-            buildSyntheticAssistantMessage(`Created \`${agentsPath}\`. It will be loaded on the next session start.`)
+            buildSyntheticAssistantMessage(t("app_agents_created", agentsPath))
           ]);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           setMessages((prev) => [
             ...prev.filter((m) => m.id !== initMsg.id),
-            buildSyntheticAssistantMessage(`Failed to generate AGENTS.md: ${message}`)
+            buildSyntheticAssistantMessage(t("app_agents_failed", message))
           ]);
         } finally {
           setBusy(false);
         }
+        return;
+      }
+
+      if (submission.command === "model") {
+        const modelName = (submission.text ?? "").trim();
+        if (!modelName) {
+          const current = getSettingsService().getResolvedSettings().model;
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_model_current", current))]);
+          return;
+        }
+        getSettingsService().updateSettings((s) => ({ ...s, env: { ...(s.env ?? {}), MODEL: modelName } }));
+        setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_model_changed", modelName))]);
+        return;
+      }
+
+      if (submission.command === "thinking") {
+        const current = getSettingsService().getResolvedSettings();
+        const next = !current.thinkingEnabled;
+        getSettingsService().updateSettings((s) => ({ ...s, thinkingEnabled: next }));
+        setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t(next ? "app_thinking_on" : "app_thinking_off"))]);
+        return;
+      }
+
+      if (submission.command === "effort") {
+        const effortVal = (submission.text ?? "").trim().toLowerCase();
+        if (!effortVal) {
+          const current = getSettingsService().getResolvedSettings().reasoningEffort;
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_effort_current", current))]);
+          return;
+        }
+        if (effortVal !== "high" && effortVal !== "max") {
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_effort_invalid"))]);
+          return;
+        }
+        getSettingsService().updateSettings((s) => ({ ...s, reasoningEffort: effortVal as "high" | "max" }));
+        setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_effort_changed", effortVal))]);
+        return;
+      }
+
+      if (submission.command === "cwd") {
+        const cwdPath = (submission.text ?? "").trim();
+        if (!cwdPath) {
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_cwd_current", projectRoot))]);
+          return;
+        }
+        const resolved = path.resolve(cwdPath);
+        if (!fs.existsSync(resolved)) {
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_cwd_invalid", resolved))]);
+          return;
+        }
+        // Update session-specific working directory instead of global process.chdir()
+        const activeSessionId = sessionManager.getActiveSessionId();
+        if (activeSessionId) {
+          setSessionWorkingDirectory(activeSessionId, resolved);
+        }
+        setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_cwd_changed", resolved))]);
+        return;
+      }
+
+      if (submission.command === "skill-new") {
+        const skillName = (submission.text ?? "").trim();
+        if (!skillName) {
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_skill_usage"))]);
+          return;
+        }
+        const skillDir = path.join(projectRoot, ".deepcode", "skills", skillName);
+        const skillFile = path.join(skillDir, "SKILL.md");
+        if (fs.existsSync(skillFile)) {
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_skill_exists", skillFile))]);
+          return;
+        }
+        try {
+          fs.mkdirSync(skillDir, { recursive: true });
+          const template = [
+            `---`,
+            `name: ${skillName}`,
+            `description: Describe what this skill does`,
+            `---`,
+            ``,
+            `## Overview`,
+            ``,
+            `This skill helps with...`,
+            ``,
+            `## Instructions`,
+            ``,
+            `When asked to use this skill, you should:`,
+            ``,
+            `1. Step one`,
+            `2. Step two`,
+          ].join("\n");
+          fs.writeFileSync(skillFile, template, "utf8");
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_skill_created", skillFile))]);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_skill_failed", message))]);
+        }
+        return;
+      }
+
+      if (submission.command === "mcp-add") {
+        const mcpArgs = (submission.text ?? "").trim();
+        if (!mcpArgs) {
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_mcp_usage"))]);
+          return;
+        }
+        const parts = mcpArgs.split(/\s+/);
+        const serverName = parts[0];
+        const command = parts[1];
+        if (!serverName || !command) {
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_mcp_usage"))]);
+          return;
+        }
+        const args = parts.slice(2);
+        const serverConfig: McpServerConfig = args.length > 0 ? { command, args } : { command };
+        try {
+          getSettingsService().updateSettings((s) => ({
+            ...s,
+            mcpServers: { ...(s.mcpServers ?? {}), [serverName]: serverConfig }
+          }));
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_mcp_added", serverName))]);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_mcp_failed", message))]);
+        }
+        return;
+      }
+
+      if (submission.command === "key") {
+        const newKey = (submission.text ?? "").trim();
+        if (!newKey) {
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_key_usage"))]);
+          return;
+        }
+        try {
+          getSettingsService().updateSettings((s) => ({
+            ...s,
+            env: { ...(s.env ?? {}), API_KEY: newKey }
+          }));
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_key_updated"))]);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_key_failed", message))]);
+        }
+        return;
+      }
+
+      if (submission.command === "settings") {
+        const resolvedSettings = getSettingsService().getResolvedSettings();
+        const activeSessionId = sessionManager.getActiveSessionId();
+        const currentCwd = activeSessionId
+          ? getSessionWorkingDirectory(activeSessionId, projectRoot)
+          : projectRoot;
+        const tools = getRecommendedCliToolsStatus();
+        const toolsSummary = [
+          `rg: ${tools.rg ? t("app_settings_tool_ready") : t("app_settings_tool_missing")}`,
+          `jq: ${tools.jq ? t("app_settings_tool_ready") : t("app_settings_tool_missing")}`
+        ].join(", ");
+        const keyStatus = resolvedSettings.apiKey ? t("app_settings_key_set") : t("app_settings_key_unset");
+        setMessages((prev) => [
+          ...prev,
+          buildSyntheticAssistantMessage(
+            t(
+              "app_settings_summary",
+              keyStatus,
+              resolvedSettings.model,
+              resolvedSettings.thinkingEnabled ? t("app_settings_enabled") : t("app_settings_disabled"),
+              resolvedSettings.reasoningEffort,
+              currentCwd,
+              toolsSummary
+            )
+          )
+        ]);
         return;
       }
 
@@ -433,7 +608,7 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
   const loadingText = busy
     ? buildLoadingText({ progress: streamProgress, processes: runningProcesses, now: Date.now() })
     : null;
-  const welcomeSettings = useMemo(() => resolveCurrentSettings(), []);
+  const welcomeSettings = useMemo(() => getSettingsService().getResolvedSettings(), []);
   const welcomeItem: SessionMessage = useMemo(() => ({
     id: "__welcome__",
     sessionId: "",
@@ -591,26 +766,6 @@ function buildStatusLine(entry: SessionEntry): string {
   return parts.join(" · ");
 }
 
-export function readSettings(): DeepcodingSettings | null {
-  try {
-    const settingsPath = path.join(os.homedir(), ".deepcode", "settings.json");
-    if (!fs.existsSync(settingsPath)) {
-      return null;
-    }
-    const raw = fs.readFileSync(settingsPath, "utf8");
-    return JSON.parse(raw) as DeepcodingSettings;
-  } catch {
-    return null;
-  }
-}
-
-export function resolveCurrentSettings(): ReturnType<typeof resolveSettings> {
-  return resolveSettings(readSettings(), {
-    model: DEFAULT_MODEL,
-    baseURL: DEFAULT_BASE_URL
-  });
-}
-
 export function createOpenAIClient(): {
   client: OpenAI | null;
   model: string;
@@ -624,7 +779,7 @@ export function createOpenAIClient(): {
   webSearchTool?: string;
   machineId?: string;
 } {
-  const settings = resolveCurrentSettings();
+  const settings = getSettingsService().getResolvedSettings();
   if (!settings.apiKey) {
     return {
       client: null,

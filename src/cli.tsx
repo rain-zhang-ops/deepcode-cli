@@ -1,10 +1,17 @@
 import React from "react";
 import { render } from "ink";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { App } from "./ui";
 import { setShellIfWindows } from "./tools/shell-utils";
-import { checkForNpmUpdate, promptForPendingUpdate, type PackageInfo } from "./updateCheck";
+import { ensureRecommendedCliTools } from "./tools/managed-tools";
+import type { PackageInfo } from "./updateCheck";
 import { SessionManager, type UserPromptContent } from "./session";
-import { createOpenAIClient, resolveCurrentSettings } from "./ui/App";
+import { createOpenAIClient } from "./ui/App";
+import { getSettingsService } from "./services/SettingsService";
+import type { DeepcodingSettings } from "./settings";
+import { t } from "./i18n";
 
 const args = process.argv.slice(2);
 const packageInfo = readPackageInfo();
@@ -33,7 +40,7 @@ async function readPrintPrompt(): Promise<string> {
       process.stdin.on("end", () => resolve(chunks.join("").trim()));
     });
   }
-  process.stderr.write("deepcode -p/--print: provide a prompt as an argument or via stdin.\n");
+  process.stderr.write(t("cli_err_print_no_prompt") + "\n");
   process.exit(1);
 }
 
@@ -43,43 +50,49 @@ if (printMode) {
   if (args.includes("--help") || args.includes("-h")) {
     process.stdout.write(
       [
-        "deepcode - Deep Code CLI",
+        t("cli_title"),
         "",
-        "Usage:",
-        "  deepcode               Launch the interactive TUI in the current directory",
-        "  deepcode -p <prompt>   Non-interactive: send a one-shot prompt and exit",
-        "  deepcode --continue    Resume the most recent session (interactive)",
-        "  deepcode --version     Print the version",
-        "  deepcode --help        Show this help",
+        t("cli_usage"),
+        t("cli_usage_tui"),
+        t("cli_usage_print"),
+        t("cli_usage_continue"),
+        t("cli_usage_version"),
+        t("cli_usage_help"),
         "",
-        "Configuration:",
-        "  ~/.deepcode/settings.json   API key, model, base URL",
-        "  ~/.agents/skills/*/SKILL.md  User-level skills",
-        "  ./.deepcode/skills/*/SKILL.md Project-level skills",
-        "  ./AGENTS.md              Project-level agent instructions",
+        t("cli_config_header"),
+        t("cli_config_settings"),
+        t("cli_config_user_skills"),
+        t("cli_config_project_skills"),
+        t("cli_config_agents"),
         "",
-        "Inside the TUI:",
-        "  enter            Send the prompt",
-        "  shift+enter      Insert a newline",
-        "  home/end         Move within the current line",
-        "  alt+left/right   Move by word",
-        "  ctrl+w           Delete the previous word",
-        "  ctrl+v           Paste an image from the clipboard",
-        "  ctrl+x           Clear pasted images",
-        "  esc              Interrupt the current model turn",
-        "  esc (empty)      Prime backtrack (press esc again to undo last exchange)",
-        "  # <note>         Save a note to AGENTS.md without sending to the model",
-        "  /                Open the skills/commands menu",
-        "  /compact         Manually compact the context window",
-        "  /context         Show context window token usage",
-        "  /diff            Show git diff inline",
-        "  /copy            Copy last response to clipboard",
-        "  /clear           Clear the screen",
-        "  /init            Generate an AGENTS.md for this project",
-        "  /new             Start a fresh conversation",
-        "  /resume          Pick a previous conversation to continue",
-        "  /exit            Quit",
-        "  ctrl+d twice     Quit"
+        t("cli_tui_header"),
+        t("cli_tui_enter"),
+        t("cli_tui_shift_enter"),
+        t("cli_tui_home_end"),
+        t("cli_tui_alt_arrows"),
+        t("cli_tui_ctrl_w"),
+        t("cli_tui_ctrl_v"),
+        t("cli_tui_ctrl_x"),
+        t("cli_tui_esc"),
+        t("cli_tui_esc_empty"),
+        t("cli_tui_hash"),
+        t("cli_tui_slash"),
+        t("cli_tui_compact"),
+        t("cli_tui_context"),
+        t("cli_tui_diff"),
+        t("cli_tui_copy"),
+        t("cli_tui_clear"),
+        t("cli_tui_init"),
+        t("cli_tui_model"),
+        t("cli_tui_thinking"),
+        t("cli_tui_effort"),
+        t("cli_tui_cwd"),
+        t("cli_tui_key"),
+        t("cli_tui_settings"),
+        t("cli_tui_new"),
+        t("cli_tui_resume"),
+        t("cli_tui_exit"),
+        t("cli_tui_ctrl_d")
       ].join("\n") + "\n"
     );
     process.exit(0);
@@ -92,10 +105,7 @@ if (printMode) {
   configureWindowsShell();
 
   if (!process.stdin.isTTY) {
-    process.stderr.write(
-      "deepcode requires an interactive terminal (TTY). " +
-        "Re-run from a real terminal session.\n"
-    );
+    process.stderr.write(t("cli_err_no_tty") + "\n");
     process.exit(1);
   }
 
@@ -105,7 +115,7 @@ if (printMode) {
 async function runPrintMode(): Promise<void> {
   const prompt = await readPrintPrompt();
   if (!prompt) {
-    process.stderr.write("deepcode -p: empty prompt.\n");
+    process.stderr.write(t("cli_err_empty_prompt") + "\n");
     process.exit(1);
   }
 
@@ -115,7 +125,7 @@ async function runPrintMode(): Promise<void> {
   const manager = new SessionManager({
     projectRoot,
     createOpenAIClient: () => createOpenAIClient(),
-    getResolvedSettings: () => resolveCurrentSettings(),
+    getResolvedSettings: () => getSettingsService().getResolvedSettings(),
     renderMarkdown: (text) => text,
     onAssistantMessage: (message) => {
       if (typeof message.content === "string" && message.content) {
@@ -140,7 +150,8 @@ async function runPrintMode(): Promise<void> {
 
 async function main(continueMode: boolean): Promise<void> {
   const projectRoot = process.cwd();
-  const updatePromptResult = await promptForPendingUpdate(packageInfo);
+  await ensureRecommendedCliTools().catch(() => undefined);
+  await ensureApiKeyConfigured();
 
   const restartRef: { current: (() => void) | null } = { current: null };
 
@@ -168,16 +179,12 @@ async function main(continueMode: boolean): Promise<void> {
     });
   }
 
-  if (!updatePromptResult.installed) {
-    void checkForNpmUpdate(packageInfo);
-  }
-
   if (continueMode) {
     // Find the most recent session for the current project
     const tmpManager = new SessionManager({
       projectRoot,
       createOpenAIClient: () => createOpenAIClient(),
-      getResolvedSettings: () => resolveCurrentSettings(),
+      getResolvedSettings: () => getSettingsService().getResolvedSettings(),
       renderMarkdown: (text) => text
     });
     const sessions = tmpManager.listSessions();
@@ -189,6 +196,47 @@ async function main(continueMode: boolean): Promise<void> {
   }
 
   startApp();
+}
+
+async function ensureApiKeyConfigured(): Promise<void> {
+  const existing = getSettingsService().getRawSettings();
+  if (existing?.env?.API_KEY?.trim()) {
+    return;
+  }
+
+  const settingsPath = getSettingsService().getSettingsPath();
+  const settingsDir = path.dirname(settingsPath);
+
+  process.stdout.write("\n" + t("cli_setup_no_key") + "\n");
+  process.stdout.write(t("cli_setup_save_to", settingsPath) + "\n\n");
+
+  const apiKey = await promptLine(t("cli_setup_prompt"));
+  if (!apiKey) {
+    process.stderr.write(t("cli_setup_required") + "\n");
+    process.exit(1);
+  }
+
+  getSettingsService().updateSettings((current) => ({
+    ...current,
+    env: {
+      ...(current?.env ?? {}),
+      API_KEY: apiKey
+    }
+  }));
+
+  process.stdout.write("\n" + t("cli_setup_saved") + "\n\n");
+}
+
+function promptLine(question: string): Promise<string> {
+  return new Promise((resolve) => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { createInterface } = require("readline") as typeof import("readline");
+    const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+    rl.question(question, (answer: string) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
 }
 
 function configureWindowsShell(): void {

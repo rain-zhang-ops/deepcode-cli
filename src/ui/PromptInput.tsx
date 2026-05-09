@@ -35,7 +35,7 @@ export type PromptSubmission = {
   text: string;
   imageUrls: string[];
   selectedSkills?: SkillInfo[];
-  command?: "new" | "resume" | "exit" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "save-memory" | "backtrack";
+  command?: "new" | "resume" | "exit" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "save-memory" | "backtrack" | "model" | "thinking" | "effort" | "cwd" | "skill-new" | "mcp-add" | "key" | "settings";
 };
 
 type Props = {
@@ -563,6 +563,46 @@ export function PromptInput({
       setBuffer(EMPTY_BUFFER);
       return;
     }
+    if (item.kind === "model") {
+      clearSlashToken();
+      setBuffer((state) => insertText(state, "/model "));
+      return;
+    }
+    if (item.kind === "thinking") {
+      onSubmit({ text: "", imageUrls: [], command: "thinking" });
+      setBuffer(EMPTY_BUFFER);
+      return;
+    }
+    if (item.kind === "effort") {
+      clearSlashToken();
+      setBuffer((state) => insertText(state, "/effort "));
+      return;
+    }
+    if (item.kind === "cwd") {
+      clearSlashToken();
+      setBuffer((state) => insertText(state, "/cwd "));
+      return;
+    }
+    if (item.kind === "skill-new") {
+      clearSlashToken();
+      setBuffer((state) => insertText(state, "/skill "));
+      return;
+    }
+    if (item.kind === "mcp-add") {
+      clearSlashToken();
+      setBuffer((state) => insertText(state, "/mcp "));
+      return;
+    }
+    if (item.kind === "key") {
+      clearSlashToken();
+      setBuffer((state) => insertText(state, "/key "));
+      return;
+    }
+    if (item.kind === "settings") {
+      onSubmit({ text: "", imageUrls: [], command: "settings" });
+      setBuffer(EMPTY_BUFFER);
+      return;
+    }
   }
 
   function submitCurrentBuffer(): void {
@@ -604,6 +644,72 @@ export function PromptInput({
             selectedSkills,
             command: "goal"
           });
+          setBuffer(EMPTY_BUFFER);
+          setImageUrls([]);
+          setSelectedSkills([]);
+          setShowSkillsDropdown(false);
+          return;
+        }
+        if (exactMatch.kind === "model") {
+          const modelName = trimmed.replace(/^\/model\b/i, "").trim();
+          onSubmit({ text: modelName, imageUrls: [], command: "model" });
+          setBuffer(EMPTY_BUFFER);
+          setImageUrls([]);
+          setSelectedSkills([]);
+          setShowSkillsDropdown(false);
+          return;
+        }
+        if (exactMatch.kind === "thinking") {
+          handleSlashSelection(exactMatch);
+          return;
+        }
+        if (exactMatch.kind === "effort") {
+          const effortVal = trimmed.replace(/^\/effort\b/i, "").trim();
+          onSubmit({ text: effortVal, imageUrls: [], command: "effort" });
+          setBuffer(EMPTY_BUFFER);
+          setImageUrls([]);
+          setSelectedSkills([]);
+          setShowSkillsDropdown(false);
+          return;
+        }
+        if (exactMatch.kind === "cwd") {
+          const cwdPath = trimmed.replace(/^\/cwd\b/i, "").trim();
+          onSubmit({ text: cwdPath, imageUrls: [], command: "cwd" });
+          setBuffer(EMPTY_BUFFER);
+          setImageUrls([]);
+          setSelectedSkills([]);
+          setShowSkillsDropdown(false);
+          return;
+        }
+        if (exactMatch.kind === "skill-new") {
+          const skillName = trimmed.replace(/^\/skill\b/i, "").trim();
+          onSubmit({ text: skillName, imageUrls: [], command: "skill-new" });
+          setBuffer(EMPTY_BUFFER);
+          setImageUrls([]);
+          setSelectedSkills([]);
+          setShowSkillsDropdown(false);
+          return;
+        }
+        if (exactMatch.kind === "mcp-add") {
+          const mcpArgs = trimmed.replace(/^\/mcp\b/i, "").trim();
+          onSubmit({ text: mcpArgs, imageUrls: [], command: "mcp-add" });
+          setBuffer(EMPTY_BUFFER);
+          setImageUrls([]);
+          setSelectedSkills([]);
+          setShowSkillsDropdown(false);
+          return;
+        }
+        if (exactMatch.kind === "key") {
+          const newKey = trimmed.replace(/^\/key\b/i, "").trim();
+          onSubmit({ text: newKey, imageUrls: [], command: "key" });
+          setBuffer(EMPTY_BUFFER);
+          setImageUrls([]);
+          setSelectedSkills([]);
+          setShowSkillsDropdown(false);
+          return;
+        }
+        if (exactMatch.kind === "settings") {
+          onSubmit({ text: "", imageUrls: [], command: "settings" });
           setBuffer(EMPTY_BUFFER);
           setImageUrls([]);
           setSelectedSkills([]);

@@ -24,8 +24,9 @@
   },
   "scripts": {
     "typecheck": "tsc -p ./ --noEmit",
-    "bundle": "esbuild ./src/cli.tsx --bundle --platform=node --format=esm --target=node18 --outfile=dist/cli.js --banner:js='#!/usr/bin/env node' --jsx=automatic --jsx-import-source=react --packages=external --log-override:empty-import-meta=silent",
+    "bundle": "esbuild ./src/cli.tsx --bundle --platform=node --format=esm --target=node18 --outfile=dist/cli.js --banner:js=\"#!/usr/bin/env node\" --jsx=automatic --jsx-import-source=react --packages=external --log-override:empty-import-meta=silent",
     "build": "npm run typecheck && npm run bundle && chmod +x dist/cli.js",
+    "build:exe": "powershell -ExecutionPolicy Bypass -File scripts/build-sea.ps1",
     "test": "tsx --test src/tests/*.test.ts",
     "test:single": "tsx --test",
     "prepack": "npm run build"

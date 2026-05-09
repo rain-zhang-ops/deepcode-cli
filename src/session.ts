@@ -11,11 +11,11 @@ import { getCompactPrompt, getSystemPrompt, getTools, AGENT_DRIFT_GUARD_SKILL } 
 import { ToolExecutor, type CreateOpenAIClient } from "./tools/executor";
 import { logApiError } from "./error-logger";
 import { logOpenAIChatCompletionDebug, normalizeDebugError } from "./debug-logger";
+import { t } from "./i18n";
+import { getTotalTokens, estimateStreamTokens, formatEstimatedTokens } from "./utils/token-utils";
+import { MAX_SESSION_ENTRIES, DEFAULT_COMPACT_PROMPT_TOKEN_THRESHOLD, DEEPSEEK_V4_COMPACT_PROMPT_TOKEN_THRESHOLD } from "./constants";
 
-const MAX_SESSION_ENTRIES = 50;
 const DEFAULT_NEW_PROMPT_API_URL = "https://deepcode.vegamo.cn/api/plugin/new";
-const DEFAULT_COMPACT_PROMPT_TOKEN_THRESHOLD = 128 * 1024;
-const DEEPSEEK_V4_COMPACT_PROMPT_TOKEN_THRESHOLD = 512 * 1024;
 
 type ChatCompletionDebugOptions = {
   enabled?: boolean;
@@ -29,6 +29,7 @@ export function getCompactPromptTokenThreshold(model: string): number {
     ? DEEPSEEK_V4_COMPACT_PROMPT_TOKEN_THRESHOLD
     : DEFAULT_COMPACT_PROMPT_TOKEN_THRESHOLD;
 }
+
 
 function isUsageRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -70,13 +71,6 @@ function accumulateUsage(current: unknown | null, next: unknown | null | undefin
   return addUsageValue(current, next);
 }
 
-function getTotalTokens(usage: unknown | null | undefined): number {
-  if (!isUsageRecord(usage)) {
-    return 0;
-  }
-  const totalTokens = usage.total_tokens;
-  return typeof totalTokens === "number" ? totalTokens : 0;
-}
 
 export type SessionStatus =
   | "failed"
@@ -188,35 +182,6 @@ export class SessionManager {
     this.toolExecutor = new ToolExecutor(this.projectRoot, this.createOpenAIClient);
   }
 
-  private estimateStreamTokens(text: string): number {
-    let tokens = 0;
-    for (const char of text) {
-      tokens += /[\u3400-\u9fff\uf900-\ufaff]/u.test(char) ? 0.6 : 0.3;
-    }
-    return tokens;
-  }
-
-  private formatEstimatedTokens(tokens: number): string {
-    if (tokens <= 0) {
-      return "0";
-    }
-
-    const roundedTokens = Math.round(tokens);
-    if (roundedTokens <= 0) {
-      return "0";
-    }
-
-    if (roundedTokens < 100) {
-      return String(roundedTokens);
-    }
-
-    if (roundedTokens < 10000) {
-      return `${Number((roundedTokens / 1000).toFixed(1))}k`;
-    }
-
-    return `${Math.round(roundedTokens / 1000)}k`;
-  }
-
   private emitLlmStreamProgress(
     requestId: string,
     startedAt: string,
@@ -229,7 +194,7 @@ export class SessionManager {
       sessionId,
       startedAt,
       estimatedTokens: Math.round(estimatedTokens),
-      formattedTokens: this.formatEstimatedTokens(estimatedTokens),
+      formattedTokens: formatEstimatedTokens(estimatedTokens),
       phase
     });
   }
@@ -345,7 +310,7 @@ export class SessionManager {
       if (typeof value !== "string" || value.length === 0) {
         return;
       }
-      estimatedTokens += this.estimateStreamTokens(value);
+      estimatedTokens += estimateStreamTokens(value);
       this.emitLlmStreamProgress(requestId, startedAt, estimatedTokens, "update", sessionId);
     };
 
@@ -795,7 +760,7 @@ The candidate skills are as follows:\n\n`;
   async generateAgentsMd(projectRoot: string): Promise<void> {
     const { client, model, baseURL, thinkingEnabled, reasoningEffort, debugLogEnabled } = this.createOpenAIClient();
     if (!client) {
-      throw new Error("No API client configured.");
+      throw new Error(t("session_no_api_client"));
     }
 
     // Build a compact picture of the project structure using pure Node.js (no shell injection risk)
@@ -875,7 +840,7 @@ The candidate skills are as follows:\n\n`;
     const rawContent = response.choices?.[0]?.message?.content;
     const content = typeof rawContent === "string" ? rawContent.trim() : "";
     if (!content) {
-      throw new Error("Model returned empty content.");
+      throw new Error(t("session_empty_content"));
     }
     fs.writeFileSync(path.join(projectRoot, "AGENTS.md"), content + "\n", "utf8");
   }
@@ -1058,11 +1023,11 @@ ${skillMd}
       this.updateSessionEntry(sessionId, (entry) => ({
         ...entry,
         status: "failed",
-        failReason: "OpenAI API key not found",
+        failReason: t("session_api_key_missing"),
         updateTime: now
       }));
       this.onAssistantMessage?.(
-        this.buildAssistantMessage(sessionId, "OpenAI API key not found. Please configure ~/.deepcode/settings.json.", null),
+        this.buildAssistantMessage(sessionId, t("app_no_api_key"), null),
         false,
       );
       this.maybeNotifyTaskCompletion(sessionId, notify, startedAt);
@@ -1105,7 +1070,7 @@ ${skillMd}
 
         const compactPromptTokenThreshold = getCompactPromptTokenThreshold(model);
         if (session.activeTokens > compactPromptTokenThreshold) {
-          const message = this.buildAssistantMessage(sessionId, "The conversation is getting long, compacting...", null);
+          const message = this.buildAssistantMessage(sessionId, t("app_compacting_long"), null);
           message.meta = { asThinking: true };
           this.onAssistantMessage?.(message, false);
           await this.compactSession(sessionId, sessionController.signal);
@@ -1197,7 +1162,7 @@ ${skillMd}
         updateTime: new Date().toISOString()
       }));
       this.onAssistantMessage?.(
-        this.buildAssistantMessage(sessionId, "The AI agent has taken several steps but hasn't reached a conclusion yet. Do you want to continue?", null),
+        this.buildAssistantMessage(sessionId, t("app_continue_question"), null),
         false,
       )
     } catch (error) {
@@ -1212,7 +1177,7 @@ ${skillMd}
 
       if (!aborted) {
         this.onAssistantMessage?.(
-          this.buildAssistantMessage(sessionId, `Request failed: ${errMessage}`, null),
+          this.buildAssistantMessage(sessionId, t("app_request_failed", errMessage), null),
           false,
         );
       }
@@ -1394,12 +1359,12 @@ ${skillMd}
       updateTime: now
     }));
 
-    const contentParts = ["Interrupted."];
+    const contentParts = [t("session_interrupted")];
     if (killedPids.length > 0) {
-      contentParts.push(`Killed processes: ${killedPids.join(", ")}.`);
+      contentParts.push(t("session_killed_processes", killedPids.join(", ")));
     }
     if (failedPids.length > 0) {
-      contentParts.push(`Failed to kill processes: ${failedPids.join(", ")}.`);
+      contentParts.push(t("session_kill_failed", failedPids.join(", ")));
     }
 
     this.onAssistantMessage?.(
@@ -1956,7 +1921,7 @@ ${skillMd}
     const toolFunction = this.findToolFunction(toolCalls, toolCallId);
     return {
       role: "tool",
-      content: this.buildInterruptedToolResult(toolFunction, "Previous tool call did not complete."),
+      content: this.buildInterruptedToolResult(toolFunction, t("session_tool_incomplete")),
       tool_call_id: toolCallId
     } as ChatCompletionMessageParam;
   }

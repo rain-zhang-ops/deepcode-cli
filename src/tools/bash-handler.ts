@@ -8,9 +8,8 @@ import {
   rewriteWindowsNullRedirect,
   toNativeCwd
 } from "./shell-utils";
+import { BASH_MAX_OUTPUT_CHARS, BASH_MAX_CAPTURE_CHARS } from "../constants";
 
-const MAX_OUTPUT_CHARS = 30000;
-const MAX_CAPTURE_CHARS = 10 * 1024 * 1024;
 const sessionWorkingDirs = new Map<string, string>();
 
 type ToolCommandResult = {
@@ -71,6 +70,18 @@ function getSessionCwd(sessionId: string, fallback: string): string {
 function updateSessionCwd(sessionId: string, fallback: string, cwd: string | null): void {
   const nextCwd = cwd ?? fallback;
   sessionWorkingDirs.set(sessionId, nextCwd);
+}
+
+/**
+ * Public API: Set the working directory for a specific session
+ * Avoids global process.chdir() side effect by tracking per-session working directories
+ */
+export function setSessionWorkingDirectory(sessionId: string, newCwd: string): void {
+  sessionWorkingDirs.set(sessionId, newCwd);
+}
+
+export function getSessionWorkingDirectory(sessionId: string, fallback: string): string {
+  return getSessionCwd(sessionId, fallback);
 }
 
 function buildShellCommand(command: string): {
@@ -152,11 +163,11 @@ async function executeShellCommand(
 }
 
 function appendChunk(existing: string, chunk: string | Buffer): string {
-  if (existing.length >= MAX_CAPTURE_CHARS) {
+  if (existing.length >= BASH_MAX_CAPTURE_CHARS) {
     return existing;
   }
   const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
-  const remaining = MAX_CAPTURE_CHARS - existing.length;
+  const remaining = BASH_MAX_CAPTURE_CHARS - existing.length;
   return `${existing}${text.slice(0, remaining)}`;
 }
 
@@ -224,10 +235,10 @@ function joinOutput(stdout: string, stderr: string): string {
 }
 
 function truncateOutput(output: string): { text: string; truncated: boolean } {
-  if (output.length <= MAX_OUTPUT_CHARS) {
+  if (output.length <= BASH_MAX_OUTPUT_CHARS) {
     return { text: output, truncated: false };
   }
-  return { text: output.slice(0, MAX_OUTPUT_CHARS), truncated: true };
+  return { text: output.slice(0, BASH_MAX_OUTPUT_CHARS), truncated: true };
 }
 
 function buildErrorMessage(exitCode: number | null, signal: string | null, error?: string): string {

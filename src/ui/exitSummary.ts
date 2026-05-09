@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import gradientString from "gradient-string";
 import type { SessionEntry, SessionMessage } from "../session";
+import { t } from "../i18n";
 
 type ExitSummaryInput = {
   session: SessionEntry | null;
@@ -78,7 +79,7 @@ export function buildExitSummaryText(input: ExitSummaryInput): string {
   const line = (text: string) =>
     `${borderColor("│")}  ${padRight(text, contentWidth)}  ${borderColor("│")}`;
 
-  const header = chalk.bold(titleColor("Goodbye!"));
+  const header = chalk.bold(titleColor(t("exit_goodbye")));
 
   const rows: string[] = [
     "",
@@ -100,11 +101,11 @@ export function buildExitSummaryText(input: ExitSummaryInput): string {
     const divider = "─".repeat(tableWidth);
 
     const headerRow =
-      padRight("Model Usage", colModel) +
-      padLeft("Reqs", colReqs) +
-      padLeft("Input Tokens", colInput) +
-      padLeft("Output Tokens", colOutput) +
-      padLeft("Cached Tokens", colCached);
+      padRight(t("exit_model_usage"), colModel) +
+      padLeft(t("exit_col_reqs"), colReqs) +
+      padLeft(t("exit_col_input"), colInput) +
+      padLeft(t("exit_col_output"), colOutput) +
+      padLeft(t("exit_col_cached"), colCached);
     rows.push(`  ${chalk.bold(headerRow)}`);
     rows.push(`  ${divider}`);
 
