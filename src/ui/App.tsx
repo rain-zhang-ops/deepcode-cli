@@ -366,6 +366,7 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
           : current.reasoningEffort === "high" ? "high" : "max";
         const currentIndex = LEVELS.indexOf(currentLevel);
         const delta = submission.command === "thinking-up" ? 1 : -1;
+        // Add LEVELS.length before taking modulo to handle negative delta without negative remainder
         const nextIndex = (currentIndex + delta + LEVELS.length) % LEVELS.length;
         const nextLevel = LEVELS[nextIndex];
         if (nextLevel === "disabled") {

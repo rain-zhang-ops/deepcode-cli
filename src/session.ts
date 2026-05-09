@@ -1565,7 +1565,21 @@ ${skillMd}
   private loadAgentInstructions(): string | null {
     const sections: string[] = [];
 
-    // Load global rules from ~/.agents/rules/*.md (sorted for determinism)
+    // Helper to safely read a file's content
+    const readFileSafe = (filePath: string): string | null => {
+      try {
+        if (!fs.existsSync(filePath)) {
+          return null;
+        }
+        const content = fs.readFileSync(filePath, "utf8").trim();
+        return content || null;
+      } catch {
+        return null;
+      }
+    };
+
+    // Load global rules from ~/.agents/rules/*.md
+    // Files are sorted alphabetically; use a numeric prefix (e.g. "01-style.md") to control load order.
     const globalRulesDir = path.join(os.homedir(), ".agents", "rules");
     try {
       if (fs.existsSync(globalRulesDir)) {
@@ -1574,13 +1588,9 @@ ${skillMd}
           if (!entry.endsWith(".md")) {
             continue;
           }
-          try {
-            const content = fs.readFileSync(path.join(globalRulesDir, entry), "utf8").trim();
-            if (content) {
-              sections.push(content);
-            }
-          } catch {
-            // skip unreadable files
+          const content = readFileSafe(path.join(globalRulesDir, entry));
+          if (content) {
+            sections.push(content);
           }
         }
       }
@@ -1589,29 +1599,15 @@ ${skillMd}
     }
 
     // Load user-level instructions (~/.deepcode/AGENTS.md)
-    const userAgentsPath = path.join(os.homedir(), ".deepcode", "AGENTS.md");
-    try {
-      if (fs.existsSync(userAgentsPath)) {
-        const content = fs.readFileSync(userAgentsPath, "utf8").trim();
-        if (content) {
-          sections.push(content);
-        }
-      }
-    } catch {
-      // skip if unreadable
+    const userContent = readFileSafe(path.join(os.homedir(), ".deepcode", "AGENTS.md"));
+    if (userContent) {
+      sections.push(userContent);
     }
 
     // Load project-level instructions (./AGENTS.md)
-    const projectAgentsPath = path.join(this.projectRoot, "AGENTS.md");
-    try {
-      if (fs.existsSync(projectAgentsPath)) {
-        const content = fs.readFileSync(projectAgentsPath, "utf8").trim();
-        if (content) {
-          sections.push(content);
-        }
-      }
-    } catch {
-      // skip if unreadable
+    const projectContent = readFileSafe(path.join(this.projectRoot, "AGENTS.md"));
+    if (projectContent) {
+      sections.push(projectContent);
     }
 
     return sections.length > 0 ? sections.join("\n\n") : null;
