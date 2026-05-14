@@ -273,10 +273,6 @@ export class BackgroundTaskManager extends EventEmitter<BackgroundTaskManagerEve
     const cleanup = (): void => {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
       this.running.delete(task.id);
-
-      if (this.running.size === 0 && this.queue.length === 0) {
-        this.emit("manager:idle");
-      }
     };
 
     const onComplete = (): void => {
