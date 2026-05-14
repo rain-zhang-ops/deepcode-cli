@@ -5,6 +5,8 @@ import { resolveSettings, type DeepcodingSettings, type PermissionMode, type Res
 
 const DEFAULT_MODEL = "deepseek-v4-pro";
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
+const DEFAULT_QWEN_MODEL = "qwen-vl-max";
+const DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
 export class SettingsService {
   private static instance: SettingsService;
@@ -32,7 +34,9 @@ export class SettingsService {
       const raw = this.readSettingsFile();
       this.cache = resolveSettings(raw, {
         model: DEFAULT_MODEL,
-        baseURL: DEFAULT_BASE_URL
+        baseURL: DEFAULT_BASE_URL,
+        qwenModel: DEFAULT_QWEN_MODEL,
+        qwenBaseURL: DEFAULT_QWEN_BASE_URL
       });
     }
     return this.cache;

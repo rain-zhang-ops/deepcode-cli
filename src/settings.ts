@@ -5,6 +5,9 @@ export type DeepcodingEnv = {
   BASE_URL?: string;
   API_KEY?: string;
   THINKING?: string;
+  QWEN_API_KEY?: string;
+  QWEN_BASE_URL?: string;
+  QWEN_MODEL?: string;
 };
 
 export type ReasoningEffort = "high" | "max";
@@ -44,6 +47,9 @@ export type ResolvedDeepcodingSettings = {
   maxRetries?: number;
   notify?: string;
   webSearchTool?: string;
+  qwenApiKey?: string;
+  qwenBaseURL: string;
+  qwenModel: string;
 };
 
 function resolveReasoningEffort(value: unknown): ReasoningEffort {
@@ -80,7 +86,7 @@ function resolveThinkingEnabled(
 
 export function resolveSettings(
   settings: DeepcodingSettings | null | undefined,
-  defaults: { model: string; baseURL: string }
+  defaults: { model: string; baseURL: string; qwenModel: string; qwenBaseURL: string }
 ): ResolvedDeepcodingSettings {
   const env = settings?.env ?? {};
   const model = env.MODEL?.trim() || defaults.model;
@@ -98,6 +104,9 @@ export function resolveSettings(
     timeout: resolvePositiveInteger(settings?.timeout),
     maxRetries: resolvePositiveInteger(settings?.maxRetries),
     notify: notify || undefined,
-    webSearchTool: webSearchTool || undefined
+    webSearchTool: webSearchTool || undefined,
+    qwenApiKey: env.QWEN_API_KEY?.trim(),
+    qwenBaseURL: env.QWEN_BASE_URL?.trim() || defaults.qwenBaseURL,
+    qwenModel: env.QWEN_MODEL?.trim() || defaults.qwenModel
   };
 }

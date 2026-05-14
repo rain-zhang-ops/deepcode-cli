@@ -28,6 +28,8 @@ type LLMClientContext = {
   notify?: string;
   webSearchTool?: string;
   machineId?: string;
+  qwenClient: OpenAI | null;
+  qwenModel: string;
 };
 
 export async function handleWebSearchTool(

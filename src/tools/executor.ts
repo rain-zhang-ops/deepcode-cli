@@ -28,6 +28,9 @@ export type CreateOpenAIClient = () => {
   notify?: string;
   webSearchTool?: string;
   machineId?: string;
+  qwenClient: OpenAI | null;
+  qwenModel: string;
+  qwenBaseURL?: string;
 };
 
 export type ToolCall = {
