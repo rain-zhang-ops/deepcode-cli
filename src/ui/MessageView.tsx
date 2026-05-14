@@ -6,9 +6,10 @@ import type { SessionMessage } from "../session";
 type Props = {
   message: SessionMessage;
   collapsed?: boolean;
+  expanded?: boolean;
 };
 
-export function MessageView({ message }: Props): React.ReactElement | null {
+export function MessageView({ message, expanded }: Props): React.ReactElement | null {
   if (!message.visible) {
     return null;
   }
@@ -51,14 +52,17 @@ export function MessageView({ message }: Props): React.ReactElement | null {
   if (message.role === "tool") {
     const summary = buildToolSummary(message);
     const diffLines = getToolDiffPreviewLines(summary);
+    const isExpanded = expanded === true;
     return (
       <Box flexDirection="column" marginY={0}>
         <StatusLine
           bulletColor={summary.ok ? "green" : "red"}
           name={formatStatusName(summary.name)}
           params={formatToolStatusParams(summary)}
+          dimmed={!isExpanded}
         />
         {diffLines.length > 0 ? <DiffPreview lines={diffLines} /> : null}
+        {isExpanded ? <ToolResultOutput content={message.content} /> : null}
       </Box>
     );
   }
@@ -87,19 +91,22 @@ export function MessageView({ message }: Props): React.ReactElement | null {
 function StatusLine({
   bulletColor,
   name,
-  params
+  params,
+  dimmed
 }: {
   bulletColor: "gray" | "green" | "red";
   name: string;
   params: string;
+  dimmed?: boolean;
 }): React.ReactElement {
   return (
     <Text wrap="truncate-end">
       {[
-        <Text key="bullet" color={bulletColor}>•</Text>,
+        <Text key="bullet" color={dimmed ? "gray" : bulletColor}>{dimmed ? "·" : "•"}</Text>,
         " ",
-        <Text key="name" bold>{name}</Text>,
-        params ? <Text key="params" color="white">{`  ${params}`}</Text> : null
+        <Text key="name" bold dimColor={dimmed}>{name}</Text>,
+        params ? <Text key="params" dimColor={dimmed}>{`  ${params}`}</Text> : null,
+        dimmed ? <Text key="hint" dimColor>  (collapsed)</Text> : null
       ]}
     </Text>
   );
@@ -290,6 +297,81 @@ function firstNonEmptyLine(value: string): string {
     }
   }
   return "";
+}
+
+function ToolResultOutput({ content }: { content: string | null }): React.ReactElement | null {
+  if (!content) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(content) as {
+      output?: string;
+      error?: string;
+      name?: string;
+    };
+
+    const output = typeof parsed.output === "string" ? parsed.output.trim() : "";
+    const error = typeof parsed.error === "string" ? parsed.error.trim() : "";
+
+    if (!output && !error) {
+      return null;
+    }
+
+    const maxLines = 20;
+    const outputLines = output ? output.split("\n") : [];
+    const errorLines = error ? error.split("\n") : [];
+    const totalLines = outputLines.length + errorLines.length;
+    const truncated = totalLines > maxLines;
+
+    const displayLines = [
+      ...outputLines,
+      ...(output && error ? [""] : []),
+      ...errorLines,
+    ].slice(0, maxLines);
+
+    return (
+      <Box flexDirection="column" marginLeft={2}>
+        <Text dimColor>└ output{truncated ? ` (showing ${maxLines} of ${totalLines} lines)` : ""}:</Text>
+        <Box flexDirection="column" marginLeft={2}>
+          {displayLines.map((line, idx) => {
+            const isError = error && idx >= outputLines.length + (output ? 1 : 0);
+            return (
+              <Text
+                key={idx}
+                color={isError ? "red" : undefined}
+                dimColor={!isError}
+                wrap="truncate-end"
+              >
+                {line || " "}
+              </Text>
+            );
+          })}
+          {truncated ? (
+            <Text dimColor>… truncated {totalLines - maxLines} more lines</Text>
+          ) : null}
+        </Box>
+      </Box>
+    );
+  } catch {
+    // Not valid JSON — show raw content (truncated)
+    const raw = content.trim();
+    if (!raw) return null;
+    const lines = raw.split("\n").slice(0, 10);
+    return (
+      <Box flexDirection="column" marginLeft={2}>
+        <Text dimColor>└ output:</Text>
+        <Box flexDirection="column" marginLeft={2}>
+          {lines.map((line, idx) => (
+            <Text key={idx} dimColor wrap="truncate-end">{line || " "}</Text>
+          ))}
+          {raw.split("\n").length > 10 ? (
+            <Text dimColor>… truncated</Text>
+          ) : null}
+        </Box>
+      </Box>
+    );
+  }
 }
 
 function buildThinkingSummary(content: string, messageParams: unknown | null): string {

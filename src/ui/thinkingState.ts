@@ -21,3 +21,18 @@ export function findExpandedThinkingId(messages: SessionMessage[]): string | nul
   }
   return expanded;
 }
+
+/**
+ * Returns the message id of the most recent tool message that should show its
+ * full output inline. Only the single most recent tool result stays expanded;
+ * all earlier ones collapse to a one-line summary.
+ */
+export function findExpandedToolId(messages: SessionMessage[]): string | null {
+  // Walk backwards — the first tool we hit is the most recent chronologically
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].role === "tool") {
+      return messages[i].id;
+    }
+  }
+  return null;
+}

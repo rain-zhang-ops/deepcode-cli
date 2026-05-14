@@ -25,7 +25,7 @@ import { PromptInput, type PromptSubmission } from "./PromptInput";
 import { MessageView } from "./MessageView";
 import { SessionList } from "./SessionList";
 import { buildLoadingText } from "./loadingText";
-import { findExpandedThinkingId } from "./thinkingState";
+import { findExpandedThinkingId, findExpandedToolId } from "./thinkingState";
 import { WelcomeScreen } from "./WelcomeScreen";
 import { AskUserQuestionPrompt } from "./AskUserQuestionPrompt";
 import {
@@ -633,6 +633,7 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
       .filter((content) => content.length > 0);
   }, [messages]);
   const expandedThinkingId = findExpandedThinkingId(messages);
+  const expandedToolId = findExpandedToolId(messages);
   const pendingQuestion = useMemo(
     () => findPendingAskUserQuestion(messages, activeStatus),
     [activeStatus, messages]
@@ -701,6 +702,7 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
               key={item.id}
               message={item}
               collapsed={isCollapsedThinking(item, expandedThinkingId)}
+              expanded={item.id === expandedToolId}
             />
           );
         }}
