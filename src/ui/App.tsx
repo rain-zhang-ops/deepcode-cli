@@ -37,11 +37,6 @@ import { buildExitSummaryText } from "./exitSummary";
 import { writeClipboardText } from "./clipboard";
 import { TodoPanel } from "./TodoPanel";
 
-const GOAL_MODE_INSTRUCTIONS = [
-  "Operate in autonomous goal mode: keep taking concrete actions toward the goal.",
-  "If one turn ends before the goal is complete, continue proactively in subsequent turns until completion or user interruption."
-].join("\n");
-
 type View = "chat" | "session-list";
 
 type AppProps = {
@@ -481,6 +476,25 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
         return;
       }
 
+      if (submission.command === "qwenkey") {
+        const newKey = (submission.text ?? "").trim();
+        if (!newKey) {
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_qwenkey_usage"))]);
+          return;
+        }
+        try {
+          getSettingsService().updateSettings((s) => ({
+            ...s,
+            env: { ...(s.env ?? {}), QWEN_API_KEY: newKey }
+          }));
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_qwenkey_updated"))]);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setMessages((prev) => [...prev, buildSyntheticAssistantMessage(t("app_qwenkey_failed", message))]);
+        }
+        return;
+      }
+
       if (submission.command === "settings") {
         const resolvedSettings = getSettingsService().getResolvedSettings();
         const activeSessionId = sessionManager.getActiveSessionId();
@@ -534,11 +548,7 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
 
       const goalText = submission.command === "goal" ? (submission.text ?? "").trim() : "";
       const promptText = goalText
-        ? [
-          `Goal: ${goalText}`,
-          "",
-          GOAL_MODE_INSTRUCTIONS
-        ].join("\n")
+        ? `Goal: ${goalText}`
         : submission.text;
 
       const prompt: UserPromptContent = {
@@ -546,7 +556,8 @@ export function App({ projectRoot, version = "", resumeSessionId, onRestart }: A
         imageUrls: submission.imageUrls,
         skills: submission.selectedSkills && submission.selectedSkills.length > 0
           ? submission.selectedSkills
-          : undefined
+          : undefined,
+        goal: goalText || undefined
       };
 
       const trimmedText = (goalText || submission.text || "").trim();
@@ -793,6 +804,13 @@ function buildStatusLine(entry: SessionEntry): string {
   if (typeof entry.activeTokens === "number" && entry.activeTokens > 0) {
     parts.push(`tokens: ${entry.activeTokens}`);
   }
+  if (entry.goal) {
+    const truncatedGoal = entry.goal.length > 60 ? entry.goal.slice(0, 57) + "..." : entry.goal;
+    parts.push(`goal: ${truncatedGoal}`);
+    if (entry.goalEvalCount > 0) {
+      parts.push(`eval: ${entry.goalEvalCount}/5`);
+    }
+  }
   if (entry.failReason) {
     parts.push(`fail: ${entry.failReason}`);
   }
@@ -811,30 +829,32 @@ export function createOpenAIClient(): {
   notify?: string;
   webSearchTool?: string;
   machineId?: string;
+  qwenClient: OpenAI | null;
+  qwenModel: string;
+  qwenBaseURL: string;
 } {
   const settings = getSettingsService().getResolvedSettings();
-  if (!settings.apiKey) {
-    return {
-      client: null,
-      model: settings.model,
-      baseURL: settings.baseURL,
-      thinkingEnabled: settings.thinkingEnabled,
-      reasoningEffort: settings.reasoningEffort,
-      debugLogEnabled: settings.debugLogEnabled,
-      timeout: settings.timeout,
-      maxRetries: settings.maxRetries,
-      notify: settings.notify,
-      webSearchTool: settings.webSearchTool,
-      machineId: getMachineId()
-    };
-  }
 
-  const client = new OpenAI({
-    apiKey: settings.apiKey,
-    baseURL: settings.baseURL || undefined,
-    timeout: settings.timeout,
-    maxRetries: settings.maxRetries
-  });
+  // Create DeepSeek client
+  const client = !settings.apiKey
+    ? null
+    : new OpenAI({
+        apiKey: settings.apiKey,
+        baseURL: settings.baseURL || undefined,
+        timeout: settings.timeout,
+        maxRetries: settings.maxRetries
+      });
+
+  // Create Qwen client for multimodal extraction
+  const qwenClient = !settings.qwenApiKey
+    ? null
+    : new OpenAI({
+        apiKey: settings.qwenApiKey,
+        baseURL: settings.qwenBaseURL || undefined,
+        timeout: settings.timeout,
+        maxRetries: settings.maxRetries
+      });
+
   return {
     client,
     model: settings.model,
@@ -846,7 +866,10 @@ export function createOpenAIClient(): {
     maxRetries: settings.maxRetries,
     notify: settings.notify,
     webSearchTool: settings.webSearchTool,
-    machineId: getMachineId()
+    machineId: getMachineId(),
+    qwenClient,
+    qwenModel: settings.qwenModel,
+    qwenBaseURL: settings.qwenBaseURL
   };
 }
 

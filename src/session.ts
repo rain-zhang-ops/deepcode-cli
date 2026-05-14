@@ -6,7 +6,7 @@ import matter from "gray-matter";
 import type { ChatCompletionMessageParam, ChatCompletionContentPart } from "openai/resources/chat/completions";
 import { launchNotifyScript } from "./notify";
 import { buildThinkingRequestOptions } from "./openai-thinking";
-import { DEEPSEEK_V4_MODELS } from "./model-capabilities";
+import { DEEPSEEK_V4_MODELS, isQwenVLModel } from "./model-capabilities";
 import { getCompactPrompt, getSystemPrompt, getTools, AGENT_DRIFT_GUARD_SKILL } from "./prompt";
 import { ToolExecutor, type CreateOpenAIClient } from "./tools/executor";
 import { logApiError } from "./error-logger";
@@ -149,8 +149,10 @@ export type SessionEntry = {
   activeTokens: number;
   createTime: string;
   updateTime: string;
-  processes: Map<string, { startTime: string; command: string }> | null;  // {pid: {startTime, command}}
+  processes: Map<string, { startTime: string; command: string }> | null;
   askUserQuestionCount: number;
+  goal: string | null;
+  goalEvalCount: number;
 };
 
 export type SessionsIndex = {
@@ -189,6 +191,7 @@ export type UserPromptContent = {
   text?: string;
   imageUrls?: string[];
   skills?: SkillInfo[];
+  goal?: string;
 };
 
 export type SkillInfo = {
@@ -959,7 +962,9 @@ The candidate skills are as follows:\n\n`;
       createTime: now,
       updateTime: now,
       processes: null,
-      askUserQuestionCount: 0
+      askUserQuestionCount: 0,
+      goal: userPrompt.goal ?? null,
+      goalEvalCount: 0
     };
     index.entries.push(entry);
     const sortedEntries = index.entries
@@ -995,6 +1000,26 @@ The candidate skills are as follows:\n\n`;
 
     const userMessage = this.buildUserMessage(sessionId, userPrompt);
     this.appendSessionMessage(sessionId, userMessage);
+
+    // If this is a goal-driven session, inject goal instructions as system messages
+    if (userPrompt.goal) {
+      const goalSystemPrompt = [
+        `**GOAL MODE ACTIVE**`,
+        ``,
+        `Your objective: ${userPrompt.goal}`,
+        ``,
+        `Instructions for goal mode:`,
+        `- You are in autonomous goal mode. Keep taking concrete actions toward the goal.`,
+        `- After each turn, evaluate your progress toward the goal.`,
+        `- If the goal is not yet complete, continue working in subsequent turns.`,
+        `- Only stop when the goal is fully achieved, or when you're truly stuck and need user input.`,
+        `- When you believe the goal is complete, provide a clear summary of what was accomplished.`,
+        `- Do NOT ask the user "do you want me to continue?" — just keep working.`,
+      ].join("\n");
+      const goalMessage = this.buildSystemMessage(sessionId, goalSystemPrompt);
+      goalMessage.visible = true;
+      this.appendSessionMessage(sessionId, goalMessage);
+    }
 
     if (userPrompt.skills && userPrompt.skills.length > 0) {
       for (const skill of userPrompt.skills) {
@@ -1074,7 +1099,7 @@ ${skillMd}
 
   async activateSession(sessionId: string, controller?: AbortController): Promise<void> {
     const startedAt = Date.now();
-    const { client, model, baseURL, thinkingEnabled, reasoningEffort, debugLogEnabled, notify } = this.createOpenAIClient();
+    const { client, model, baseURL, thinkingEnabled, reasoningEffort, debugLogEnabled, notify, qwenClient, qwenModel, qwenBaseURL } = this.createOpenAIClient();
     const now = new Date().toISOString();
 
     if (!client) {
@@ -1111,6 +1136,9 @@ ${skillMd}
     }));
 
     this.sessionControllers.set(sessionId, sessionController);
+
+    // Extract image content via Qwen for multimodal prompts before the DeepSeek loop
+    await this.extractImagesWithQwen(sessionId, qwenClient, qwenModel, qwenBaseURL, debugLogEnabled, sessionController.signal);
 
     try {
       const maxIterations = 80000;  // about 1K RMB cost
@@ -1210,6 +1238,33 @@ ${skillMd}
         }
 
         if (!toolCalls) {
+          // Goal mode: auto-continue with self-evaluation
+          const currentSession = this.getSession(sessionId);
+          if (currentSession?.goal && (currentSession.goalEvalCount ?? 0) < 5) {
+            const nextEvalCount = (currentSession.goalEvalCount ?? 0) + 1;
+            this.updateSessionEntry(sessionId, (entry) => ({
+              ...entry,
+              goalEvalCount: nextEvalCount,
+              status: "processing"
+            }));
+            // Inject a self-evaluation prompt so the model can assess progress
+            const evalPrompt = [
+              `**Goal Progress Check (${nextEvalCount}/5)**`,
+              ``,
+              `Your goal: ${currentSession.goal}`,
+              ``,
+              `You just completed a turn without calling any tools. Evaluate your progress:`,
+              `1. What have you accomplished so far toward the goal?`,
+              `2. Is the goal fully achieved? If YES, provide a completion summary and stop.`,
+              `3. If NOT yet achieved, what are the next concrete steps? Continue working — call tools to make progress.`,
+              ``,
+              `IMPORTANT: If the goal is NOT done, you MUST call tools on your next response to continue making progress. Do NOT just describe what needs to be done — actually DO it.`,
+            ].join("\n");
+            const evalMessage = this.buildSystemMessage(sessionId, evalPrompt);
+            evalMessage.visible = true;
+            this.appendSessionMessage(sessionId, evalMessage);
+            continue; // Keep looping — the eval message will be picked up next iteration
+          }
           return;
         }
       }
@@ -1244,6 +1299,125 @@ ${skillMd}
         this.sessionControllers.delete(sessionId);
       }
       this.maybeNotifyTaskCompletion(sessionId, notify, startedAt);
+    }
+  }
+
+  /**
+   * Use Qwen VL model to extract text descriptions from images in the last user message.
+   * The extracted text is appended as a system message so DeepSeek can process it.
+   */
+  private async extractImagesWithQwen(
+    sessionId: string,
+    qwenClient: NonNullable<ReturnType<CreateOpenAIClient>["qwenClient"]> | null,
+    qwenModel: string,
+    qwenBaseURL: string | undefined,
+    debugLogEnabled: boolean | undefined,
+    signal: AbortSignal
+  ): Promise<void> {
+    if (!qwenClient) {
+      return; // No Qwen key configured, skip multimodal extraction
+    }
+
+    const messages = this.listSessionMessages(sessionId);
+    
+    // Find the most recent user message that has image contentParams and hasn't been processed
+    let targetMessage: SessionMessage | null = null;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const msg = messages[i];
+      if (msg.role !== "user" || msg.compacted) {
+        continue;
+      }
+      const params = msg.contentParams as Array<{ type?: string }> | null;
+      if (Array.isArray(params)) {
+        const hasImages = params.some((p) => p?.type === "image_url");
+        if (hasImages) {
+          // Skip if already processed (marked via meta)
+          if (msg.meta && (msg.meta as Record<string, unknown>).imagesExtracted === true) {
+            continue;
+          }
+          targetMessage = msg;
+          break;
+        }
+      }
+    }
+
+    if (!targetMessage || !targetMessage.contentParams) {
+      return;
+    }
+
+    const imageParams = (targetMessage.contentParams as Array<{ type: string; image_url?: { url?: string } }>)
+      .filter((p) => p?.type === "image_url");
+    
+    if (imageParams.length === 0) {
+      return;
+    }
+
+    this.throwIfAborted(signal);
+
+    // Build content parts for Qwen: text prompt + images
+    const userText = targetMessage.content || "Please describe these images in detail.";
+    const imagePrompt = userText.trim()
+      ? `${userText}\n\nPlease describe the attached image(s) in detail. Include any visible text, code, diagrams, UI elements, or other relevant information.`
+      : "Please describe this image in detail. Include any visible text, code, diagrams, UI elements, or other relevant information.";
+
+    const contentParts: ChatCompletionContentPart[] = [
+      { type: "text", text: imagePrompt },
+      ...imageParams.map((p) => ({
+        type: "image_url" as const,
+        image_url: { url: p.image_url?.url || "" }
+      }))
+    ];
+
+    try {
+      const response = await this.createChatCompletionStream(
+        qwenClient,
+        {
+          model: qwenModel,
+          messages: [{ role: "user", content: contentParts }],
+          max_tokens: 2048
+        },
+        { signal },
+        sessionId,
+        {
+          enabled: debugLogEnabled,
+          location: "SessionManager.extractImagesWithQwen",
+          baseURL: qwenBaseURL,
+          params: { purpose: "image-extraction", imageCount: imageParams.length }
+        }
+      );
+
+      this.throwIfAborted(signal);
+
+      const rawContent = response.choices?.[0]?.message?.content;
+      const extractedText = typeof rawContent === "string" ? rawContent.trim() : "";
+
+      if (extractedText) {
+        // Inject the extracted image description as a system message right after the user message
+        const imageDescription = `[Image content extracted by Qwen vision model]:\n\n${extractedText}`;
+        const systemMessage = this.buildSystemMessage(sessionId, imageDescription);
+        systemMessage.visible = false; // Don't show in UI chat history
+        
+        // Re-read messages, insert system message, and mark target as processed
+        const updatedMessages = this.listSessionMessages(sessionId);
+        const targetIndex = updatedMessages.findIndex((m) => m.id === targetMessage!.id);
+        if (targetIndex !== -1) {
+          updatedMessages.splice(targetIndex + 1, 0, systemMessage);
+          // Mark the user message as processed so we don't re-extract on loop iterations
+          const targetInList = updatedMessages[targetIndex];
+          if (targetInList.meta) {
+            (targetInList.meta as Record<string, unknown>).imagesExtracted = true;
+          } else {
+            targetInList.meta = { imagesExtracted: true } as unknown as MessageMeta;
+          }
+          this.saveSessionMessages(sessionId, updatedMessages);
+        }
+      }
+    } catch (error) {
+      if (this.isAbortLikeError(error) || signal.aborted) {
+        throw error;
+      }
+      // Log but don't fail — DeepSeek can still try to process without image info
+      console.warn("Qwen image extraction failed:", error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -1883,12 +2057,16 @@ ${skillMd}
       if (message.content) {
         contentParts.push({ type: "text", text: message.content });
       }
-      const params = Array.isArray(message.contentParams)
-          ? message.contentParams
-          : [message.contentParams];
-      for (const param of params) {
-        if (param && typeof param === "object") {
-          contentParts.push(param as ChatCompletionContentPart);
+      // Skip image content parts if images have already been extracted by Qwen
+      const imagesAlreadyExtracted = message.meta && (message.meta as Record<string, unknown>).imagesExtracted === true;
+      if (!imagesAlreadyExtracted) {
+        const params = Array.isArray(message.contentParams)
+            ? message.contentParams
+            : [message.contentParams];
+        for (const param of params) {
+          if (param && typeof param === "object") {
+            contentParts.push(param as ChatCompletionContentPart);
+          }
         }
       }
       const contentValue: string | ChatCompletionContentPart[] =
@@ -2224,7 +2402,11 @@ ${skillMd}
       askUserQuestionCount:
         typeof value.askUserQuestionCount === "number" && value.askUserQuestionCount >= 0
           ? Math.floor(value.askUserQuestionCount)
-          : 0
+          : 0,
+      goal: typeof value.goal === "string" ? value.goal : null,
+      goalEvalCount: typeof value.goalEvalCount === "number" && value.goalEvalCount >= 0
+        ? Math.floor(value.goalEvalCount)
+        : 0
     };
   }
 
