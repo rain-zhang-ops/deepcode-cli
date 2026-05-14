@@ -65,6 +65,7 @@ export class BackgroundTaskManager extends EventEmitter<BackgroundTaskManagerEve
   private readonly running = new Map<string, EnqueuedTask>();
   private readonly maxConcurrency: number;
   private destroyed = false;
+  private idleEmitted = false;
 
   constructor(options: BackgroundTaskManagerOptions = {}) {
     super();
@@ -164,7 +165,7 @@ export class BackgroundTaskManager extends EventEmitter<BackgroundTaskManagerEve
     for (const task of [...this.queue]) {
       this.cancel(task.id);
     }
-    for (const task of this.running.values()) {
+    for (const task of [...this.running.values()]) {
       this.cancel(task.id);
     }
   }
@@ -254,7 +255,11 @@ export class BackgroundTaskManager extends EventEmitter<BackgroundTaskManagerEve
     }
 
     if (wasIdle && this.running.size > 0) {
+      this.idleEmitted = false;
       this.emit("manager:active");
+    } else if (!this.idleEmitted && this.running.size === 0 && this.queue.length === 0) {
+      this.idleEmitted = true;
+      this.emit("manager:idle");
     }
   }
 

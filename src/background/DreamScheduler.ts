@@ -54,6 +54,11 @@ export class DreamScheduler {
   /** Pending dreams waiting for idle time. */
   private pendingDreams: DreamTask[] = [];
 
+  // Stored listener references for cleanup
+  private readonly onManagerIdle: () => void;
+  private readonly onManagerActive: () => void;
+  private readonly onTaskFinished: () => void;
+
   constructor(
     taskManager: BackgroundTaskManager,
     handler: DreamHandler,
@@ -67,7 +72,25 @@ export class DreamScheduler {
       defaultCooldownMs: options.defaultCooldownMs ?? 60000,
     };
 
-    this.wireManagerEvents();
+    this.onManagerIdle = () => {
+      this.idleSince = Date.now();
+      this.scheduleIdleCheck();
+    };
+    this.onManagerActive = () => {
+      this.idleSince = 0;
+      if (this.idleTimer) {
+        clearTimeout(this.idleTimer);
+        this.idleTimer = null;
+      }
+    };
+    this.onTaskFinished = () => {
+      this.flushPendingDreams();
+    };
+
+    this.taskManager.on("manager:idle", this.onManagerIdle);
+    this.taskManager.on("manager:active", this.onManagerActive);
+    this.taskManager.on("task:completed", this.onTaskFinished);
+    this.taskManager.on("task:failed", this.onTaskFinished);
   }
 
   // ── public API ──────────────────────────────────────────────────────────
@@ -117,33 +140,13 @@ export class DreamScheduler {
   destroy(): void {
     this.destroyed = true;
     this.clearPending();
+    this.taskManager.off("manager:idle", this.onManagerIdle);
+    this.taskManager.off("manager:active", this.onManagerActive);
+    this.taskManager.off("task:completed", this.onTaskFinished);
+    this.taskManager.off("task:failed", this.onTaskFinished);
   }
 
   // ── internal ─────────────────────────────────────────────────────────────
-
-  private wireManagerEvents(): void {
-    this.taskManager.on("manager:idle", () => {
-      this.idleSince = Date.now();
-      this.scheduleIdleCheck();
-    });
-
-    this.taskManager.on("manager:active", () => {
-      this.idleSince = 0;
-      if (this.idleTimer) {
-        clearTimeout(this.idleTimer);
-        this.idleTimer = null;
-      }
-    });
-
-    // When a dream task finishes, try to flush pending dreams
-    this.taskManager.on("task:completed", () => {
-      this.flushPendingDreams();
-    });
-
-    this.taskManager.on("task:failed", () => {
-      this.flushPendingDreams();
-    });
-  }
 
   private scheduleIdleCheck(): void {
     if (this.idleTimer) clearTimeout(this.idleTimer);
