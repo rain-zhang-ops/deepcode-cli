@@ -1,7 +1,7 @@
 import type { SkillInfo } from "../session";
 import { t } from "../i18n";
 
-export type SlashCommandKind = "skill" | "skills" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "new" | "resume" | "exit" | "model" | "thinking" | "effort" | "cwd" | "skill-new" | "mcp-add" | "key" | "settings" | "mode" | "todos";
+export type SlashCommandKind = "skill" | "skills" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "new" | "resume" | "exit" | "model" | "thinking" | "effort" | "cwd" | "skill-new" | "mcp-add" | "key" | "qwenkey" | "settings" | "mode" | "todos";
 
 export type SlashCommandItem = {
   kind: SlashCommandKind;
@@ -119,6 +119,12 @@ export const BUILTIN_SLASH_COMMANDS: SlashCommandItem[] = [
     name: "key",
     label: "/key",
     description: t("slash_key")
+  },
+  {
+    kind: "qwenkey",
+    name: "qwenkey",
+    label: "/qwenkey",
+    description: t("slash_qwenkey")
   },
   {
     kind: "settings",

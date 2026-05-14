@@ -35,7 +35,7 @@ export type PromptSubmission = {
   text: string;
   imageUrls: string[];
   selectedSkills?: SkillInfo[];
-  command?: "new" | "resume" | "exit" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "save-memory" | "backtrack" | "model" | "thinking" | "effort" | "cwd" | "skill-new" | "mcp-add" | "key" | "settings" | "mode" | "todos";
+  command?: "new" | "resume" | "exit" | "goal" | "compact" | "diff" | "copy" | "clear" | "context" | "init" | "save-memory" | "backtrack" | "model" | "thinking" | "effort" | "cwd" | "skill-new" | "mcp-add" | "key" | "qwenkey" | "settings" | "mode" | "todos";
 };
 
 type Props = {
@@ -702,6 +702,15 @@ export function PromptInput({
         if (exactMatch.kind === "key") {
           const newKey = trimmed.replace(/^\/key\b/i, "").trim();
           onSubmit({ text: newKey, imageUrls: [], command: "key" });
+          setBuffer(EMPTY_BUFFER);
+          setImageUrls([]);
+          setSelectedSkills([]);
+          setShowSkillsDropdown(false);
+          return;
+        }
+        if (exactMatch.kind === "qwenkey") {
+          const newKey = trimmed.replace(/^\/qwenkey\b/i, "").trim();
+          onSubmit({ text: newKey, imageUrls: [], command: "qwenkey" });
           setBuffer(EMPTY_BUFFER);
           setImageUrls([]);
           setSelectedSkills([]);
